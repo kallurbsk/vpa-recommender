@@ -37,13 +37,16 @@ var (
 	thesholdNoCrashes          = flag.Int64("threshold-crash-number", 3, `Number of pod crashes to withstand before scaling up both CPU and memory resources irrespective of usage`)
 	timeSinceLastCrash         = flag.Duration("time-since-last-crash", 0, `Difference between current system time and last crash recorded time`)
 	scaleDownSafetyMargin      = flag.Float64("scale-down-safety-margin", 1.2, `Factor by which VPA recommender should suggest scale down based on current usage`)
-	scaleDownMonitorTimeWindow = flag.Duration("scale-down-monitor-time-window", "1h", `How much past time from current time should be considered for getting local maxima values of resource usage for scaling down`)
+	scaleDownMonitorTimeWindow = flag.Duration("scale-down-monitor-time-window", 60*time.Minute, `How much past time from current time should be considered for getting local maxima values of resource usage for scaling down`)
+	thresholdScaleUp           = flag.Float64("threshold-scale-up", 0.75, "threshold value beyond which VPA scale up should kick in")
+	thresholdScaleDown         = flag.Float64("threshold-scale-down", 0.25, "threshold value below which VPA scale down should kick in")
+	thresholdMonitorTimeWindow = flag.Duration("threshold-monitor-time-window", 30*time.Minute, `Time window to get local maxima of CPU and memory usage till the curren time`)
 	kubeApiQps                 = flag.Float64("kube-api-qps", 5.0, `QPS limit when making requests to Kubernetes apiserver`)
 	kubeApiBurst               = flag.Float64("kube-api-burst", 10.0, `QPS burst limit when making requests to Kubernetes apiserver`)
-	// checkpointsGCInterval  = flag.Duration("checkpoints-gc-interval", 10*time.Minute, `How often orphaned checkpoints should be garbage collected`)
+	checkpointsGCInterval      = flag.Duration("checkpoints-gc-interval", 10*time.Minute, `How often orphaned checkpoints should be garbage collected`)
 	// prometheusAddress      = flag.String("prometheus-address", "", `Where to reach for Prometheus metrics`)
 	// prometheusJobName      = flag.String("prometheus-cadvisor-job-name", "kubernetes-cadvisor", `Name of the prometheus job name which scrapes the cAdvisor metrics`)
-	// address                = flag.String("address", ":8942", "The address to expose Prometheus metrics.")
+	address = flag.String("address", ":8942", "The address to expose Prometheus metrics.")
 
 	// TODO BSK: change storage to default of current usage
 	storage = flag.String("storage", "", `Specifies storage mode. Supported values: prometheus, checkpoint (default)`)
@@ -58,7 +61,7 @@ var (
 	// ctrNamespaceLabel   = flag.String("container-namespace-label", "namespace", `Label name to look for container names`)
 	// ctrPodNameLabel     = flag.String("container-pod-name-label", "pod_name", `Label name to look for container names`)
 	// ctrNameLabel        = flag.String("container-name-label", "name", `Label name to look for container names`)
-	// vpaObjectNamespace  = flag.String("vpa-object-namespace", apiv1.NamespaceAll, "Namespace to search for VPA objects and pod stats. Empty means all namespaces will be used.")
+	vpaObjectNamespace = flag.String("vpa-object-namespace", apiv1.NamespaceAll, "Namespace to search for VPA objects and pod stats. Empty means all namespaces will be used.")
 )
 
 // Aggregation configuration flags
@@ -67,6 +70,12 @@ var (
 	memoryAggregationIntervalCount = flag.Int64("memory-aggregation-interval-count", model.DefaultMemoryAggregationIntervalCount, `The number of consecutive memory-aggregation-intervals which make up the MemoryAggregationWindowLength which in turn is the period for memory usage aggregation by VPA. In other words, MemoryAggregationWindowLength = memory-aggregation-interval * memory-aggregation-interval-count.`)
 	memoryHistogramDecayHalfLife   = flag.Duration("memory-histogram-decay-half-life", model.DefaultMemoryHistogramDecayHalfLife, `The amount of time it takes a historical memory usage sample to lose half of its weight. In other words, a fresh usage sample is twice as 'important' as one with age equal to the half life period.`)
 	cpuHistogramDecayHalfLife      = flag.Duration("cpu-histogram-decay-half-life", model.DefaultCPUHistogramDecayHalfLife, `The amount of time it takes a historical CPU usage sample to lose half of its weight.`)
+)
+
+// TODO BSK : new scale values
+const (
+	// Going by the logic of doubling the resources based on the usage, we use this value
+	scaleUpMultiple = 2.0
 )
 
 func main() {

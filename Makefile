@@ -31,7 +31,7 @@ else
 GOBIN=$(shell go env GOBIN)
 endif
 
-all: manager
+# all: manager
 
 # Run tests
 # test: generate fmt vet manifests

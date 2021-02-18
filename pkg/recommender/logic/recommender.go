@@ -114,9 +114,10 @@ func CreatePodResourceRecommender() PodResourceRecommender {
 	lowerBoundFactor := 1.0
 	upperBoundFactor := 2.0
 
-	targetScaleEstimator := NewScaleValueEstimator(targetFactor)
-	lowerBoundScaleEstimator := NewScaleValueEstimator(lowerBoundFactor)
-	upperBoundScaleEstimator := NewScaleValueEstimator(upperBoundFactor)
+	// TODO BSK : revisit this to call proper scale values
+	// targetScaleEstimator := NewScaleValueEstimator(targetFactor)
+	// lowerBoundScaleEstimator := NewScaleValueEstimator(lowerBoundFactor)
+	// upperBoundScaleEstimator := NewScaleValueEstimator(upperBoundFactor)
 
 	targetEstimator := WithScaleValue(targetFactor, targetScaleEstimator)
 	lowerBoundEstimator := WithScaleValue(lowerBoundFactor, lowerBoundScaleEstimator)

@@ -1,0 +1,7 @@
+fileignoreconfig:
+- filename: pkg/recommender/apis/autoscaling.k8s.io/v1/types.go
+  checksum: 98de246ab6be4a3432f69cffa0cde5b250f027acbb3084750bea1c19877064c6
+- filename: pkg/recommender/model/aggregate_container_state.go
+  checksum: 94fba7a6214d199176f29080ea8a5dea8d01da37e44b8e453f151bcf687f5f97
+- filename: pkg/recommender/routines/recommender.go
+  checksum: 0c0dd7464010f201ac264c6adb73633c87df158b3eb9fa916f0e2bf989ae558a

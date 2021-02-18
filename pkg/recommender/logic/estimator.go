@@ -42,16 +42,22 @@ type minResourcesEstimator struct {
 	baseEstimator ResourceEstimator
 }
 
-// Scale the resources between 1x - 2x the current usage within the safety margin for resource usage
-type scaledResourceEstimator struct {
-	scaleValue    float64
-	baseEstimator ResourceEstimator
+// Base threshold estimator struct to ensure scaling happens within the threshold window
+type thresholdEstimator struct {
+	thresoldScaleUp    float64
+	thresholdScaleDown float64
 }
 
-// NewScaleValueEstimator returns a given ResourceEstimator with scale applied.
-// The returned resources are equal to the scaleValue (1 - 2) times the current resource usage values
-func NewScaleValueEstimator(scaleValue float64) ResourceEstimator {
-	return &scaleValueEstimator{scaleValue}
+// Scale the resources between 1x - 2x the current usage within the safety margin for resource usage
+type scaledResourceEstimator struct {
+	cpuScaleValue float64
+	memScaleValue float64
+	// baseEstimator ResourceEstimator
+}
+
+// NewThresholdEstiamtor returns a new thresholdEstimator that users provide as CLI arguments
+func NewThresholdEstimator(thresholdScaleUp float64, thresholdScaleDown float64) ResourceEstimator {
+	return &thresholdEstimator{thresholdScaleUp, thresholdScaleDown}
 }
 
 // NewConstEstimator returns a new constEstimator with given resources.
@@ -74,7 +80,7 @@ func WithMinResources(minResources model.Resources, baseEstimator ResourceEstima
 // WithScaleValue returns a given ResourceEstimator with scale values applied
 // The returned resources are equal to the original resources multiplied by the scaleValue factor
 func WithScaleValue(scaleValue float64, baseEstimator ResourceEstimator) ResourceEstimator {
-	return &scaledResourceEstimator{scaleValue, baseEstimator}
+	return &scaledResourceEstimator{cpuScaleValue, memScaleValue}
 }
 
 // Returns a constant amount of resources.
@@ -86,7 +92,6 @@ func (e *constEstimator) GetResourceEstimation(s *model.AggregateContainerState)
 func getScaleValue(s *model.AggregateContainerState) float64 {
 	// CPUUsage = s.AggregateCPUUsage
 	// memoryUsage = s.AggregateMemoryPeaks
-	scaleValue := 2.0 // TODO BSK: Change this as per below logic
 	// TODO BSK:
 	/*
 		1. Compare the current usage CPU and memory with previously stored values from VerticalPodAutoscalerCheckpointStatus vertical-pod-autoscaler/e2e/vendor/k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1/types.go
@@ -94,15 +99,52 @@ func getScaleValue(s *model.AggregateContainerState) float64 {
 		3. If it is lesser than the previously stored value, set to a user defined scale value which is taken as input during recommender initiation
 	*/
 
-	return float64(scaleValue)
+	cpuLocalMaxima := s.LocalMaximaCPU
+	memoryLocalMaxima := s.LocalMaximaMemory
+
+	cpuUsageLowerThreshold := cpuLocalMaxima.Usage * thresholdScaleDown
+	memUsageLowerThreshold := memLocalMaxima.Usage * thresholdScaleDown
+
+	cpuUsageUpperThreshold := cpuLocalMaxima.Usage * thresholdScaleUp
+	memUsageUpperThrehsold := memLocalMaxima.Usage * thresholdScaleUp
+
+	if cpuUsageLowerThreshold < cpuLocalMaxima.Usage && cpuLocalMaxima.Usage > cpuUsageUpperThreshold {
+		cpuScaleValue = 1.0 // keep it as is
+	} else if cpuUsageLowerThreshold < cpuLocalMaxima.Request {
+		cpuScaleValue = scaleDownSafetyMargin
+	} else if cpuUsageUpperThreshold > cpuLocalMaxima.Request {
+		cpuScaleValue = scaleUpValue
+	}
+
+	if memUsageLowerThreshold < memLocalMaxima.Usage && memLocalMaxima.Usage > memUsageUpperThreshold {
+		memScaleValue = 1.0 // keep it as is
+	} else if memUsageLowerThreshold < memLocalMaxima.Request {
+		memScaleValue = scaleDownSafetyMargin
+	} else if memUsageUpperThrehsold > memLocalMaxima.Request {
+		memScaleValue = scaleUpValue
+	}
+
+	if s.RestartCountSinceLastOOM > thresholdNoCrashes {
+		s.RestartCountSinceLastOOM = 0
+		memScaleValue = scaleUpValue
+		cpuScaleValue = scaleUpValue
+	}
+
+	return cpuScaleValue, memScaleValue
 }
 
 func (e *scaledResourceEstimator) GetResourceEstimation(s *model.AggregateContainerState) model.Resources {
 	originalResources := e.baseEstimator.GetResourceEstimation(s)
 	scaledResources := make(model.Resources)
-	e.scaleValue = getScaleValue(s)
+	cpuScale, memScale := getScaleValue(s)
 	for resource, resourceAmount := range originalResources {
-		scaledResources[resource] = model.ScaleResource(resourceAmount, e.scaleValue)
+		scaleValue := 0.0
+		if resource == "cpu" {
+			scaleValue = cpuScale
+		} else if resource == "memory" {
+			scaleValue = memoryScale
+		}
+		scaledResources[resource] = model.ScaleResource(resourceAmount, scaleValue)
 	}
 	return scaledResources
 }
