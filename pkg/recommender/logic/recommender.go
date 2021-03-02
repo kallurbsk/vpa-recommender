@@ -96,35 +96,24 @@ func FilterControlledResources(estimation model.Resources, controlledResources [
 
 // CreatePodResourceRecommender returns the primary recommender.
 func CreatePodResourceRecommender() PodResourceRecommender {
-	// targetCPUPercentile := 0.9
-	// lowerBoundCPUPercentile := 0.5
-	// upperBoundCPUPercentile := 0.95
-
-	// targetMemoryPeaksPercentile := 0.9
-	// lowerBoundMemoryPeaksPercentile := 0.5
-	// upperBoundMemoryPeaksPercentile := 0.95
-
-	// targetEstimator := NewPercentileEstimator(targetCPUPercentile, targetMemoryPeaksPercentile)
-	// lowerBoundEstimator := NewPercentileEstimator(lowerBoundCPUPercentile, lowerBoundMemoryPeaksPercentile)
-	// upperBoundEstimator := NewPercentileEstimator(upperBoundCPUPercentile, upperBoundMemoryPeaksPercentile)
 
 	// While targetFactor is determined using current usage for both CPU and memory,
 	// lower bound and upper bounds are estimated using targetCPUFactor itself
-	targetFactor := 2.0
-	lowerBoundFactor := 1.0
-	upperBoundFactor := 2.0
+	targetCPUFactor := 2.0
+	lowerBoundCPUFactor := targetCPUFactor / 2.0
+	upperBoundCPUFactor := 2.0 * targetCPUFactor
 
-	// TODO BSK : revisit this to call proper scale values
-	// targetScaleEstimator := NewScaleValueEstimator(targetFactor)
-	// lowerBoundScaleEstimator := NewScaleValueEstimator(lowerBoundFactor)
-	// upperBoundScaleEstimator := NewScaleValueEstimator(upperBoundFactor)
+	targetMemoryFactor := 2.0
+	lowerBoundMemoryFactor := targetMemoryFactor / 2.0
+	upperBoundMemoryFactor := 2.0 * targetMemoryFactor
 
-	targetEstimator := WithScaleValue(targetFactor, targetScaleEstimator)
-	lowerBoundEstimator := WithScaleValue(lowerBoundFactor, lowerBoundScaleEstimator)
-	upperBoundEstimator := WithScaleValue(upperBoundFactor, upperBoundScaleEstimator)
-	// targetEstimator = WithMargin(*safetyMarginFraction, targetEstimator)
-	// lowerBoundEstimator = WithMargin(*safetyMarginFraction, lowerBoundEstimator)
-	// upperBoundEstimator = WithMargin(*safetyMarginFraction, upperBoundEstimator)
+	targetScaleEstimator := NewScaleValueEstimator(targetCPUFactor, targetMemoryFactor)
+	lowerBoundScaleEstimator := NewScaleValueEstimator(lowerBoundCPUFactor, lowerBoundMemoryFactor)
+	upperBoundScaleEstimator := NewScaleValueEstimator(upperBoundCPUFactor, upperBoundMemoryFactor)
+
+	targetEstimator := WithMargin(*safetyMarginFraction, targetScaleEstimator)
+	lowerBoundEstimator := WithMargin(*safetyMarginFraction, lowerBoundScaleEstimator)
+	upperBoundEstimator := WithMargin(*safetyMarginFraction, upperBoundScaleEstimator)
 
 	return &podResourceRecommender{
 		targetEstimator,

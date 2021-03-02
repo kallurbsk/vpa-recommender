@@ -42,9 +42,13 @@ type minResourcesEstimator struct {
 	baseEstimator ResourceEstimator
 }
 
-// Base threshold estimator struct to ensure scaling happens within the threshold window
-type thresholdEstimator struct {
-	thresoldScaleUp    float64
+// Base scale up threshold estimator struct to ensure scaling happens below the scale up threshold limit
+type scaleUpThresholdEstimator struct {
+	thresoldScaleUp float64
+}
+
+// Base scale down threshold estimator struct to ensure scaling happens above the scale down threshold limit
+type scaleDownThresholdEstimator struct {
 	thresholdScaleDown float64
 }
 
@@ -55,14 +59,24 @@ type scaledResourceEstimator struct {
 	// baseEstimator ResourceEstimator
 }
 
-// NewThresholdEstiamtor returns a new thresholdEstimator that users provide as CLI arguments
-func NewThresholdEstimator(thresholdScaleUp float64, thresholdScaleDown float64) ResourceEstimator {
-	return &thresholdEstimator{thresholdScaleUp, thresholdScaleDown}
+// NewScaleUpThresholdEstiamtor returns a new scaleUpThresholdEstimator to set upper boundary for scaling up
+func NewScaleUpThresholdEstimator(thresholdScaleUp float64) ResourceEstimator {
+	return &scaleUpThresholdEstimator{thresholdScaleUp}
+}
+
+// NewScaleDownThresholdEstiamtor returns a new scaleDownThresholdEstimator to set lower boundary for scaling down
+func NewScaleDownThresholdEstimator(thresholdScaleDown float64) ResourceEstimator {
+	return &scaleDownThresholdEstimator{thresholdScaleDown}
 }
 
 // NewConstEstimator returns a new constEstimator with given resources.
 func NewConstEstimator(resources model.Resources) ResourceEstimator {
 	return &constEstimator{resources}
+}
+
+// NewScaleValueEstimator returns a new scaledResourceEstimator with scale value parameters for CPU and memory
+func NewScaleValueEstimator(cpuScaleValue float64, memScaleValue float64) ResourceEstimator {
+	return &scaledResourceEstimator{cpuScaleValue, memScaleValue}
 }
 
 // WithMargin returns a given ResourceEstimator with margin applied.
@@ -75,12 +89,6 @@ func WithMargin(marginFraction float64, baseEstimator ResourceEstimator) Resourc
 // The returned resources are equal to the max(original resources, minResources)
 func WithMinResources(minResources model.Resources, baseEstimator ResourceEstimator) ResourceEstimator {
 	return &minResourcesEstimator{minResources, baseEstimator}
-}
-
-// WithScaleValue returns a given ResourceEstimator with scale values applied
-// The returned resources are equal to the original resources multiplied by the scaleValue factor
-func WithScaleValue(scaleValue float64, baseEstimator ResourceEstimator) ResourceEstimator {
-	return &scaledResourceEstimator{cpuScaleValue, memScaleValue}
 }
 
 // Returns a constant amount of resources.
@@ -142,11 +150,31 @@ func (e *scaledResourceEstimator) GetResourceEstimation(s *model.AggregateContai
 		if resource == "cpu" {
 			scaleValue = cpuScale
 		} else if resource == "memory" {
-			scaleValue = memoryScale
+			scaleValue = memScale
 		}
 		scaledResources[resource] = model.ScaleResource(resourceAmount, scaleValue)
 	}
 	return scaledResources
+}
+
+func (e *scaleUpThresholdEstimator) GetResourceEstimation(s *model.AggregateCollectionState) model.Resources {
+	originalResources := e.baseEstimator.GetResourceEstimation(s)
+	thresholdScaleUpResources := make(model.Resources)
+	for resource, resourceAmount := range originalResources {
+		thresholdScaleUpResources[resource] = model.ScaleResource(resourceAmount, e.thresoldScaleUp)
+	}
+
+	return thresholdScaleUpResources
+}
+
+func (e *scaleDownThresholdEstimator) GetResourceEstimation(s *model.AggregateCollectionState) model.Resources {
+	originalResources := e.baseEstimator.GetResourceEstimation(s)
+	thresholdScaleDownResources := make(model.Resources)
+	for resource, resourceAmount := range originalResources {
+		thresholdScaleDownResources[resource] = model.ScaleResource(resourceAmount, e.thresholdScaleDown)
+	}
+
+	return thresholdScaleDownResources
 }
 
 func (e *marginEstimator) GetResourceEstimation(s *model.AggregateContainerState) model.Resources {
