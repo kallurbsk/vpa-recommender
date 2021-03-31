@@ -36,16 +36,21 @@ limitations under the License.
 package model
 
 import (
-	"autoscaler/vertical-pod-autoscaler/pkg/recommender/util"
+	// "autoscaler/vertical-pod-autoscaler/pkg/recommender/util"
 	"fmt"
 	"log"
 	"math"
 	"time"
 
+	vpa_types "vpa-recommender/pkg/apis/autoscaling.k8s.io/v1"
+	"vpa-recommender/pkg/recommender/util"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	vpa_types "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/util"
+
+	// vpa_types "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
+	model "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
+	// "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/util"
 )
 
 // ContainerNameToAggregateStateMap maps a container name to AggregateContainerState
@@ -62,18 +67,18 @@ const (
 
 var (
 	// DefaultControlledResources is a default value of Spec.ResourcePolicy.ContainerPolicies[].ControlledResources.
-	DefaultControlledResources = []ResourceName{ResourceCPU, ResourceMemory}
+	DefaultControlledResources = []model.ResourceName{model.ResourceCPU, model.ResourceMemory}
 )
 
 // ContainerStateAggregator is an interface for objects that consume and
 // aggregate container usage samples.
 type ContainerStateAggregator interface {
 	// AddSample aggregates a single usage sample.
-	AddSample(sample *ContainerUsageSample)
+	AddSample(sample *model.ContainerUsageSample)
 	// SubtractSample removes a single usage sample. The subtracted sample
 	// should be equal to some sample that was aggregated with AddSample()
 	// in the past.
-	SubtractSample(sample *ContainerUsageSample)
+	SubtractSample(sample *model.ContainerUsageSample)
 	// GetLastRecommendation returns last recommendation calculated for this
 	// aggregator.
 	GetLastRecommendation() corev1.ResourceList
@@ -111,12 +116,12 @@ type AggregateContainerState struct {
 	IsUnderVPA          bool
 	UpdateMode          *vpa_types.UpdateMode
 	ScalingMode         *vpa_types.ContainerScalingMode
-	ControlledResources *[]ResourceName
+	ControlledResources *[]model.ResourceName
 
 	// BSK: adding new VPA recommender specific parameters
 
-	LastCtrCPULocalMaxima       *ContainerUsageSample
-	LastCtrMemoryLocalMaxima    *ContainerUsageSample
+	LastCtrCPULocalMaxima       *model.ContainerUsageSample
+	LastCtrMemoryLocalMaxima    *model.ContainerUsageSample
 	CurrentCtrCPUUsage          float64
 	CurrentCtrMemUsage          float64
 	LastLocalMaximaRecordedTime time.Time
@@ -130,7 +135,7 @@ type AggregateContainerState struct {
 	ThresholdScaleUp      float64
 	ScaleDownSafetyMargin float64
 	ScaleUpValue          float64
-	ThresholdNumCrashes   int8
+	ThresholdNumCrashes   int
 }
 
 // GetLastRecommendation returns last recorded recommendation.
@@ -157,7 +162,7 @@ func (a *AggregateContainerState) GetScalingMode() *vpa_types.ContainerScalingMo
 
 // GetControlledResources returns the list of resources controlled by VPA controlling this aggregator.
 // Returns default if not set.
-func (a *AggregateContainerState) GetControlledResources() []ResourceName {
+func (a *AggregateContainerState) GetControlledResources() []model.ResourceName {
 	if a.ControlledResources != nil {
 		return *a.ControlledResources
 	}
@@ -209,26 +214,26 @@ func NewAggregateContainerState() *AggregateContainerState {
 	}
 }
 
-func (a *AggregateContainerState) setCPUUsage(sample *ContainerUsageSample) {
-	a.CurrentCtrCPUUsage = CoresFromCPUAmount(sample.Usage)
+func (a *AggregateContainerState) setCPUUsage(sample *model.ContainerUsageSample) {
+	a.CurrentCtrCPUUsage = model.CoresFromCPUAmount(sample.Usage)
 	log.Printf("BSK ACS a.CurrentCPUUsage = %v", a.CurrentCtrCPUUsage)
 }
 
-func (a *AggregateContainerState) setMemUsage(sample *ContainerUsageSample) {
-	a.CurrentCtrMemUsage = BytesFromMemoryAmount(sample.Usage)
+func (a *AggregateContainerState) setMemUsage(sample *model.ContainerUsageSample) {
+	a.CurrentCtrMemUsage = model.BytesFromMemoryAmount(sample.Usage)
 	log.Printf("BSK ACS a.CurrentCtrMemUsage = %v", a.CurrentCtrMemUsage)
 }
 
 // AddSample aggregates a single usage sample.
-func (a *AggregateContainerState) AddSample(sample *ContainerUsageSample) {
+func (a *AggregateContainerState) AddSample(sample *model.ContainerUsageSample) {
 	switch sample.Resource {
-	case ResourceCPU:
+	case model.ResourceCPU:
 		a.addCPUSample(sample)
 		// BSK : NEW VPA
 		a.addCPULocalMaxima(sample)
 		a.setCPUUsage(sample)
-	case ResourceMemory:
-		a.AggregateMemoryPeaks.AddSample(BytesFromMemoryAmount(sample.Usage), 1.0, sample.MeasureStart)
+	case model.ResourceMemory:
+		a.AggregateMemoryPeaks.AddSample(model.BytesFromMemoryAmount(sample.Usage), 1.0, sample.MeasureStart)
 		// BSK : NEW VPA
 		a.addMemoryLocalMaxima(sample)
 		a.setMemUsage(sample)
@@ -242,18 +247,18 @@ func (a *AggregateContainerState) AddSample(sample *ContainerUsageSample) {
 // AddSample() in the past.
 // Only memory samples can be subtracted at the moment. Support for CPU could be
 // added if necessary.
-func (a *AggregateContainerState) SubtractSample(sample *ContainerUsageSample) {
+func (a *AggregateContainerState) SubtractSample(sample *model.ContainerUsageSample) {
 	switch sample.Resource {
-	case ResourceMemory:
-		a.AggregateMemoryPeaks.SubtractSample(BytesFromMemoryAmount(sample.Usage), 1.0, sample.MeasureStart)
+	case model.ResourceMemory:
+		a.AggregateMemoryPeaks.SubtractSample(model.BytesFromMemoryAmount(sample.Usage), 1.0, sample.MeasureStart)
 	default:
 		panic(fmt.Sprintf("SubtractSample doesn't support resource '%s'", sample.Resource))
 	}
 }
 
-func (a *AggregateContainerState) addCPUSample(sample *ContainerUsageSample) {
-	cpuUsageCores := CoresFromCPUAmount(sample.Usage)
-	cpuRequestCores := CoresFromCPUAmount(sample.Request)
+func (a *AggregateContainerState) addCPUSample(sample *model.ContainerUsageSample) {
+	cpuUsageCores := model.CoresFromCPUAmount(sample.Usage)
+	cpuRequestCores := model.CoresFromCPUAmount(sample.Request)
 	// Samples are added with the weight equal to the current request. This means that
 	// whenever the request is increased, the history accumulated so far effectively decays,
 	// which helps react quickly to CPU starvation.
@@ -269,7 +274,7 @@ func (a *AggregateContainerState) addCPUSample(sample *ContainerUsageSample) {
 }
 
 // addCPULocalMaxima is the local maxima value for getting the CPU usage local maxima in threshold time window
-func (a *AggregateContainerState) addCPULocalMaxima(sample *ContainerUsageSample) {
+func (a *AggregateContainerState) addCPULocalMaxima(sample *model.ContainerUsageSample) {
 	// TODO BSK:
 	/*
 		Instead of storing all samples, we will pick what is the max of samples from a specified set of time window
@@ -278,34 +283,36 @@ func (a *AggregateContainerState) addCPULocalMaxima(sample *ContainerUsageSample
 		compare if the current usage is more than the lastLocalMaxima parameter within the given time window.
 		Only then we will update lastLocalMaxima
 	*/
-	cpuUsageCores := CoresFromCPUAmount(sample.Usage)
-	// cpuRequestCores := CoresFromCPUAmount(sample.Request)
+	cpuUsageCores := model.CoresFromCPUAmount(sample.Usage)
+	// cpuRequestCores := model.CoresFromCPUAmount(sample.Request)
 
 	// thresholdMonitorTimeWindow = 30 * time.Minute by default
 	diffDuration := time.Now().Sub(a.LastLocalMaximaRecordedTime)
 
 	if diffDuration > a.TimeWindowForLocalMaxima {
 		a.LastCtrCPULocalMaxima.Usage = 0
+		a.LastCtrCPULocalMaxima.Request = 0
 	}
 	// assign LastCtrCPULocalMaxima if only it is less than current CPU usage
 	if float64(a.LastCtrCPULocalMaxima.Usage) < cpuUsageCores {
-		a.LastCtrCPULocalMaxima.Usage = CPUAmountFromCores(cpuUsageCores)
+		a.LastCtrCPULocalMaxima.Usage = model.CPUAmountFromCores(cpuUsageCores)
 	}
 }
 
 // addMemoryLocalMaxima is the local maxima value for getting the CPU usage local maxima in threshold time window
-func (a *AggregateContainerState) addMemoryLocalMaxima(sample *ContainerUsageSample) {
-	memoryUsage := BytesFromMemoryAmount(sample.Usage)
+func (a *AggregateContainerState) addMemoryLocalMaxima(sample *model.ContainerUsageSample) {
+	memoryUsage := model.BytesFromMemoryAmount(sample.Usage)
 
 	// thresholdMonitorTimeWindow = 30 * time.Minute by default
 	diffDuration := time.Now().Sub(a.LastLocalMaximaRecordedTime)
 
 	if diffDuration > a.TimeWindowForLocalMaxima {
 		a.LastCtrMemoryLocalMaxima.Usage = 0
+		a.LastCtrMemoryLocalMaxima.Request = 0
 	}
 	// assign LastCtrCPULocalMaxima if only it is less than current CPU usage
 	if float64(a.LastCtrMemoryLocalMaxima.Usage) < memoryUsage {
-		a.LastCtrMemoryLocalMaxima.Usage = MemoryAmountFromBytes(memoryUsage)
+		a.LastCtrMemoryLocalMaxima.Usage = model.MemoryAmountFromBytes(memoryUsage)
 	}
 }
 
@@ -328,8 +335,8 @@ func (a *AggregateContainerState) SaveToCheckpoint() (*vpa_types.VerticalPodAuto
 		CPUHistogram:      *cpu,
 		Version:           SupportedCheckpointVersion,
 		// TODO BSK: other details from new recommender
-		LocalMaximaCPU:              a.LastCtrCPULocalMaxima,
-		LocalMaximaMemory:           a.LastCtrMemoryLocalMaxima,
+		LocalMaximaCPU:              float64(a.LastCtrCPULocalMaxima.Usage),
+		LocalMaximaMemory:           float64(a.LastCtrMemoryLocalMaxima.Usage),
 		LastLocalMaximaRecordedTime: a.LastLocalMaximaRecordedTime,
 		TotalCPUSamplesCount:        a.TotalCPUSamplesCount,
 		CurrentCtrCPUUsage:          a.CurrentCtrCPUUsage,
@@ -355,8 +362,8 @@ func (a *AggregateContainerState) LoadFromCheckpoint(checkpoint *vpa_types.Verti
 		return err
 	}
 
-	a.LastCtrCPULocalMaxima = checkpoint.LocalMaximaCPU
-	a.LastCtrMemoryLocalMaxima = checkpoint.LocalMaximaMemory
+	a.LastCtrCPULocalMaxima.Usage = model.ResourceAmount(checkpoint.LocalMaximaCPU)
+	a.LastCtrMemoryLocalMaxima.Usage = model.ResourceAmount(checkpoint.LocalMaximaMemory)
 	a.LastLocalMaximaRecordedTime = checkpoint.LastLocalMaximaRecordedTime
 
 	// loading last recorded "current" container cpu and memory
@@ -387,7 +394,7 @@ func (a *AggregateContainerState) UpdateFromPolicy(resourcePolicy *vpa_types.Con
 	}
 	a.ControlledResources = &DefaultControlledResources
 	if resourcePolicy != nil && resourcePolicy.ControlledResources != nil {
-		a.ControlledResources = ResourceNamesApiToModel(*resourcePolicy.ControlledResources)
+		a.ControlledResources = model.ResourceNamesApiToModel(*resourcePolicy.ControlledResources)
 	}
 }
 
@@ -412,24 +419,24 @@ func AggregateStateByContainerName(aggregateContainerStateMap aggregateContainer
 // that creates ContainerStateAgregator for container if it is no longer
 // present in the cluster state.
 type ContainerStateAggregatorProxy struct {
-	containerID ContainerID
+	containerID model.ContainerID
 	cluster     *ClusterState
 }
 
 // NewContainerStateAggregatorProxy creates a ContainerStateAggregatorProxy
 // pointing to the cluster state.
-func NewContainerStateAggregatorProxy(cluster *ClusterState, containerID ContainerID) ContainerStateAggregator {
+func NewContainerStateAggregatorProxy(cluster *ClusterState, containerID model.ContainerID) ContainerStateAggregator {
 	return &ContainerStateAggregatorProxy{containerID, cluster}
 }
 
 // AddSample adds a container sample to the aggregator.
-func (p *ContainerStateAggregatorProxy) AddSample(sample *ContainerUsageSample) {
+func (p *ContainerStateAggregatorProxy) AddSample(sample *model.ContainerUsageSample) {
 	aggregator := p.cluster.findOrCreateAggregateContainerState(p.containerID)
 	aggregator.AddSample(sample)
 }
 
 // SubtractSample subtracts a container sample from the aggregator.
-func (p *ContainerStateAggregatorProxy) SubtractSample(sample *ContainerUsageSample) {
+func (p *ContainerStateAggregatorProxy) SubtractSample(sample *model.ContainerUsageSample) {
 	aggregator := p.cluster.findOrCreateAggregateContainerState(p.containerID)
 	aggregator.SubtractSample(sample)
 }

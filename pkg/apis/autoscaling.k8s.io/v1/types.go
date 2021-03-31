@@ -349,8 +349,8 @@ type VerticalPodAutoscalerCheckpointStatus struct {
 	TotalSamplesCount int `json:"totalSamplesCount,omitempty" protobuf:"bytes,7,opt,name=totalSamplesCount"`
 
 	// BSK: Adding changes to accomodate local maxima style of recommendation
-	LocalMaximaCPU              int64     `json:"local_maxima_cpu,omitempty"` // ResourceAmount is int64 so putting that as same here
-	LocalMaximaMemory           int64     `json:"local_maxima_memory,omitempty"`
+	LocalMaximaCPU              float64   `json:"local_maxima_cpu,omitempty"` // ResourceAmount is int64 so putting that as same here
+	LocalMaximaMemory           float64   `json:"local_maxima_memory,omitempty"`
 	LastLocalMaximaRecordedTime time.Time `json:"last_local_maxima_recorded_time,omitempty"`
 	TotalCPUSamplesCount        int       `json:"total_cpu_samples_count,omitempty"`
 	CurrentCtrCPUUsage          float64   `json:"current_ctr_cpu_usage,omitempty"`

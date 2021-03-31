@@ -18,6 +18,7 @@ package routines
 
 import (
 	"autoscaler/vertical-pod-autoscaler/pkg/recommender/logic"
+	"autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
 	"context"
 	"flag"
 	"time"
@@ -28,7 +29,9 @@ import (
 	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/checkpoint"
 	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input"
 	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/logic"
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
+	vpa_routine "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/routines/vpa"
+
+	// "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
 	metrics_recommender "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/metrics/recommender"
 	vpa_utils "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/vpa"
 	"k8s.io/client-go/rest"
@@ -97,7 +100,7 @@ func (r *recommender) UpdateVPAs() {
 		if !found {
 			continue
 		}
-		resources := r.podResourceRecommender.GetRecommendedPodResources(GetContainerNameToAggregateStateMap(vpa))
+		resources := r.podResourceRecommender.GetRecommendedPodResources(vpa_routine.GetContainerNameToAggregateStateMap(vpa))
 		had := vpa.HasRecommendation()
 		vpa.UpdateRecommendation(getCappedRecommendation(vpa.ID, resources, observedVpa.Spec.ResourcePolicy))
 

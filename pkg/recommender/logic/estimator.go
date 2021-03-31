@@ -20,32 +20,34 @@ import (
 	"math"
 	"time"
 
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
+	model "vpa-recommender/pkg/recommender/model"
+
+	parent_model "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
 	"k8s.io/klog"
 )
 
 // TODO: Split the estimator to have a separate estimator object for CPU and memory.
 
 // ResourceEstimator is a function from AggregateContainerState to
-// model.Resources, e.g. a prediction of resources needed by a group of
+// parent_model.Resources, e.g. a prediction of resources needed by a group of
 // containers.
 type ResourceEstimator interface {
-	//GetResourceEstimation(s *model.AggregateContainerState) model.Resources
-	GetResourceEstimation(s *model.AggregateContainerState) (model.Resources, bool)
+	//GetResourceEstimation(s *model.AggregateContainerState) parent_model.Resources
+	GetResourceEstimation(s *model.AggregateContainerState) (parent_model.Resources, bool)
 }
 
 // Implementation of ResourceEstimator that returns constant amount of
 // resources. This can be used as by a fake recommender for test purposes.
 type constEstimator struct {
-	resources model.Resources
+	resources parent_model.Resources
 }
 
 // Simple implementation of the ResourceEstimator interface. It returns specific
 // percentiles of CPU usage distribution and memory peaks distribution.
-type percentileEstimator struct {
-	cpuPercentile    float64
-	memoryPercentile float64
-}
+// type percentileEstimator struct {
+// 	cpuPercentile    float64
+// 	memoryPercentile float64
+// }
 
 type marginEstimator struct {
 	marginFraction float64
@@ -53,7 +55,7 @@ type marginEstimator struct {
 }
 
 type minResourcesEstimator struct {
-	minResources  model.Resources
+	minResources  parent_model.Resources
 	baseEstimator ResourceEstimator
 }
 
@@ -98,14 +100,14 @@ func NewScaleValueEstimator(cpuScaleValue float64, memScaleValue float64) Resour
 }
 
 // NewConstEstimator returns a new constEstimator with given resources.
-func NewConstEstimator(resources model.Resources) ResourceEstimator {
+func NewConstEstimator(resources parent_model.Resources) ResourceEstimator {
 	return &constEstimator{resources}
 }
 
 // NewPercentileEstimator returns a new percentileEstimator that uses provided percentiles.
-func NewPercentileEstimator(cpuPercentile float64, memoryPercentile float64) ResourceEstimator {
-	return &percentileEstimator{cpuPercentile, memoryPercentile}
-}
+// func NewPercentileEstimator(cpuPercentile float64, memoryPercentile float64) ResourceEstimator {
+// 	return &percentileEstimator{cpuPercentile, memoryPercentile}
+// }
 
 // WithMargin returns a given ResourceEstimator with margin applied.
 // The returned resources are equal to the original resources plus (originalResource * marginFraction)
@@ -115,7 +117,7 @@ func WithMargin(marginFraction float64, baseEstimator ResourceEstimator) Resourc
 
 // WithMinResources returns a given ResourceEstimator with minResources applied.
 // The returned resources are equal to the max(original resources, minResources)
-func WithMinResources(minResources model.Resources, baseEstimator ResourceEstimator) ResourceEstimator {
+func WithMinResources(minResources parent_model.Resources, baseEstimator ResourceEstimator) ResourceEstimator {
 	return &minResourcesEstimator{minResources, baseEstimator}
 }
 
@@ -125,19 +127,21 @@ func WithConfidenceMultiplier(multiplier, exponent float64, baseEstimator Resour
 }
 
 // Returns a constant amount of resources.
-func (e *constEstimator) GetResourceEstimation(s *model.AggregateContainerState) (model.Resources, bool) {
+func (e *constEstimator) GetResourceEstimation(s *model.AggregateContainerState) (parent_model.Resources, bool) {
 	return e.resources, true
 }
 
 // Returns specific percentiles of CPU and memory peaks distributions.
-func (e *percentileEstimator) GetResourceEstimation(s *model.AggregateContainerState) (model.Resources, bool) {
-	return model.Resources{
-		model.ResourceCPU: model.CPUAmountFromCores(
-			s.AggregateCPUUsage.Percentile(e.cpuPercentile)),
-		model.ResourceMemory: model.MemoryAmountFromBytes(
-			s.AggregateMemoryPeaks.Percentile(e.memoryPercentile)),
-	}, true
-}
+// TODO BSK : We are not using this function. Hence changed the import object to parent_model.
+// Percentile function call was returning an error and hence wanted to avoid it
+// func (e *percentileEstimator) GetResourceEstimation(s *parent_model.AggregateContainerState) (parent_model.Resources, bool) {
+// 	return parent_model.Resources{
+// 		parent_model.ResourceCPU: parent_model.CPUAmountFromCores(
+// 			s.AggregateCPUUsage.Percentile(e.cpuPercentile)),
+// 		parent_model.ResourceMemory: parent_model.MemoryAmountFromBytes(
+// 			s.AggregateMemoryPeaks.Percentile(e.memoryPercentile)),
+// 	}, true
+// }
 
 // Returns a non-negative real number that heuristically measures how much
 // confidence the history aggregated in the AggregateContainerState provides.
@@ -160,30 +164,30 @@ func getConfidence(s *model.AggregateContainerState) float64 {
 //     scaledResource = originalResource * (1 + 1/confidence)^exponent.
 // This can be used to widen or narrow the gap between the lower and upper bound
 // estimators depending on how much input data is available to the estimators.
-func (e *confidenceMultiplier) GetResourceEstimation(s *model.AggregateContainerState) (model.Resources, bool) {
+func (e *confidenceMultiplier) GetResourceEstimation(s *model.AggregateContainerState) (parent_model.Resources, bool) {
 	confidence := getConfidence(s)
 	originalResources, _ := e.baseEstimator.GetResourceEstimation(s)
-	scaledResources := make(model.Resources)
+	scaledResources := make(parent_model.Resources)
 	for resource, resourceAmount := range originalResources {
-		scaledResources[resource] = model.ScaleResource(
+		scaledResources[resource] = parent_model.ScaleResource(
 			resourceAmount, math.Pow(1.+e.multiplier/confidence, e.exponent))
 	}
 	return scaledResources, true
 }
 
-func (e *marginEstimator) GetResourceEstimation(s *model.AggregateContainerState) (model.Resources, bool) {
+func (e *marginEstimator) GetResourceEstimation(s *model.AggregateContainerState) (parent_model.Resources, bool) {
 	originalResources, _ := e.baseEstimator.GetResourceEstimation(s)
-	newResources := make(model.Resources)
+	newResources := make(parent_model.Resources)
 	for resource, resourceAmount := range originalResources {
-		margin := model.ScaleResource(resourceAmount, e.marginFraction)
+		margin := parent_model.ScaleResource(resourceAmount, e.marginFraction)
 		newResources[resource] = originalResources[resource] + margin
 	}
 	return newResources, true
 }
 
-func (e *minResourcesEstimator) GetResourceEstimation(s *model.AggregateContainerState) (model.Resources, bool) {
+func (e *minResourcesEstimator) GetResourceEstimation(s *model.AggregateContainerState) (parent_model.Resources, bool) {
 	originalResources, _ := e.baseEstimator.GetResourceEstimation(s)
-	newResources := make(model.Resources)
+	newResources := make(parent_model.Resources)
 	for resource, resourceAmount := range originalResources {
 		if resourceAmount < e.minResources[resource] {
 			resourceAmount = e.minResources[resource]
@@ -202,32 +206,34 @@ func getScaleValue(s *model.AggregateContainerState) (float64, float64) {
 		3. If it is lesser than the previously stored value, set to a user defined scale value which is taken as input during recommender initiation
 	*/
 	var cpuScaleValue, memScaleValue float64
-	cpuLocalMaxima := s.LocalMaximaCPU
-	memLocalMaxima := s.LocalMaximaMemory
+	cpuLocalMaxima := s.LastCtrCPULocalMaxima
+	memLocalMaxima := s.LastCtrMemoryLocalMaxima
+	cpuLocalMaximaUsage := float64(cpuLocalMaxima.Usage)
+	memLocalMaximaUsage := float64(memLocalMaxima.Usage)
 
-	cpuUsageLowerThreshold := cpuLocalMaxima.Usage * s.ThresholdScaleDown
-	memUsageLowerThreshold := memLocalMaxima.Usage * s.ThresholdScaleDown
+	cpuUsageLowerThreshold := cpuLocalMaximaUsage * s.ThresholdScaleDown
+	memUsageLowerThreshold := memLocalMaximaUsage * s.ThresholdScaleDown
 
-	cpuUsageUpperThreshold := cpuLocalMaxima.Usage * s.ThresholdScaleUp
-	memUsageUpperThreshsold := memLocalMaxima.Usage * s.ThresholdScaleUp
+	cpuUsageUpperThreshold := cpuLocalMaximaUsage * s.ThresholdScaleUp
+	memUsageUpperThreshsold := memLocalMaximaUsage * s.ThresholdScaleUp
 
-	if cpuUsageLowerThreshold < cpuLocalMaxima.Usage && cpuLocalMaxima.Usage > cpuUsageUpperThreshold {
+	if cpuUsageLowerThreshold < cpuLocalMaximaUsage && cpuLocalMaximaUsage > cpuUsageUpperThreshold {
 		cpuScaleValue = 1.0 // keep it as is
-	} else if cpuUsageLowerThreshold < cpuLocalMaxima.Request {
+	} else if cpuUsageLowerThreshold < float64(cpuLocalMaxima.Request) {
 		cpuScaleValue = s.ScaleDownSafetyMargin
-	} else if cpuUsageUpperThreshold > cpuLocalMaxima.Request {
+	} else if cpuUsageUpperThreshold > float64(cpuLocalMaxima.Request) {
 		cpuScaleValue = s.ScaleUpValue
 	}
 
-	if memUsageLowerThreshold < memLocalMaxima.Usage && memLocalMaxima.Usage > memUsageUpperThreshsold {
+	if memUsageLowerThreshold < memLocalMaximaUsage && memLocalMaximaUsage > memUsageUpperThreshsold {
 		memScaleValue = 1.0 // keep it as is
-	} else if memUsageLowerThreshold < memLocalMaxima.Request {
+	} else if memUsageLowerThreshold < float64(memLocalMaxima.Request) {
 		memScaleValue = s.ScaleDownSafetyMargin
-	} else if memUsageUpperThreshsold > memLocalMaxima.Request {
+	} else if memUsageUpperThreshsold > float64(memLocalMaxima.Request) {
 		memScaleValue = s.ScaleUpValue
 	}
 
-	if s.RestartCountSinceLastOOM > s.ThresholdNumCrashes {
+	if int(s.RestartCountSinceLastOOM) > s.ThresholdNumCrashes {
 		s.RestartCountSinceLastOOM = 0
 		memScaleValue = s.ScaleUpValue
 		cpuScaleValue = s.ScaleUpValue
@@ -236,7 +242,7 @@ func getScaleValue(s *model.AggregateContainerState) (float64, float64) {
 	return cpuScaleValue, memScaleValue
 }
 
-func (e *scaledResourceEstimator) GetResourceEstimation(s *model.AggregateContainerState) (model.Resources, bool) {
+func (e *scaledResourceEstimator) GetResourceEstimation(s *model.AggregateContainerState) (parent_model.Resources, bool) {
 	// We need current CPU usage and memory than a histogram like picture.
 	// Use the function which we will declare in ACS go module and get the current CPU and memory usage value
 	// See test case example for this
@@ -246,15 +252,15 @@ func (e *scaledResourceEstimator) GetResourceEstimation(s *model.AggregateContai
 	// to them. So check how to get them here.
 	cpuUsage := s.CurrentCtrMemUsage
 	memUsage := s.CurrentCtrMemUsage
-	originalResources := model.Resources{
-		model.ResourceCPU:    model.CPUAmountFromCores(cpuUsage),
-		model.ResourceMemory: model.MemoryAmountFromBytes(memUsage),
+	originalResources := parent_model.Resources{
+		parent_model.ResourceCPU:    parent_model.CPUAmountFromCores(cpuUsage),
+		parent_model.ResourceMemory: parent_model.MemoryAmountFromBytes(memUsage),
 	}
-	scaledResources := make(model.Resources)
+	scaledResources := make(parent_model.Resources)
 	cpuScale, memScale := getScaleValue(s)
 	klog.V(1).Infof("BSK estimator cpuScale, memScale = %f, %f", cpuScale, memScale)
 	// Skip the scale value if it is 1.0 to keep track of idempotency.
-	// It also avoids reconciliation. GetResourceEstimation should also return bool along with model.Resources
+	// It also avoids reconciliation. GetResourceEstimation should also return bool along with parent_model.Resources
 	if cpuScale == 1.0 {
 		return originalResources, false
 	}
@@ -270,27 +276,27 @@ func (e *scaledResourceEstimator) GetResourceEstimation(s *model.AggregateContai
 		} else if resource == "memory" {
 			scaleValue = memScale
 		}
-		scaledResources[resource] = model.ScaleResource(resourceAmount, scaleValue)
+		scaledResources[resource] = parent_model.ScaleResource(resourceAmount, scaleValue)
 	}
 	klog.V(1).Infof("BSK scaledResources = %+v", scaledResources)
 	return scaledResources, true
 }
 
-func (e *scaleUpThresholdEstimator) GetResourceEstimation(s *model.AggregateCollectionState) (model.Resources, bool) {
+func (e *scaleUpThresholdEstimator) GetResourceEstimation(s *model.AggregateContainerState) (parent_model.Resources, bool) {
 	originalResources, _ := e.baseEstimator.GetResourceEstimation(s)
-	thresholdScaleUpResources := make(model.Resources)
+	thresholdScaleUpResources := make(parent_model.Resources)
 	for resource, resourceAmount := range originalResources {
-		thresholdScaleUpResources[resource] = model.ScaleResource(resourceAmount, e.thresoldScaleUp)
+		thresholdScaleUpResources[resource] = parent_model.ScaleResource(resourceAmount, e.thresoldScaleUp)
 	}
 
 	return thresholdScaleUpResources, true
 }
 
-func (e *scaleDownThresholdEstimator) GetResourceEstimation(s *model.AggregateCollectionState) (model.Resources, bool) {
+func (e *scaleDownThresholdEstimator) GetResourceEstimation(s *model.AggregateContainerState) (parent_model.Resources, bool) {
 	originalResources, _ := e.baseEstimator.GetResourceEstimation(s)
-	thresholdScaleDownResources := make(model.Resources)
+	thresholdScaleDownResources := make(parent_model.Resources)
 	for resource, resourceAmount := range originalResources {
-		thresholdScaleDownResources[resource] = model.ScaleResource(resourceAmount, e.thresholdScaleDown)
+		thresholdScaleDownResources[resource] = parent_model.ScaleResource(resourceAmount, e.thresholdScaleDown)
 	}
 
 	return thresholdScaleDownResources, true

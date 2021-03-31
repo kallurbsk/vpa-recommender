@@ -19,7 +19,9 @@ package logic
 import (
 	"flag"
 
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
+	"vpa-recommender/pkg/recommender/model"
+
+	parent_model "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
 	"k8s.io/klog"
 )
 
@@ -41,11 +43,11 @@ type RecommendedPodResources map[string]RecommendedContainerResources
 // container.
 type RecommendedContainerResources struct {
 	// Recommended optimal amount of resources.
-	Target model.Resources
+	Target parent_model.Resources
 	// Recommended minimum amount of resources.
-	LowerBound model.Resources
+	LowerBound parent_model.Resources
 	// Recommended maximum amount of resources.
-	UpperBound model.Resources
+	UpperBound parent_model.Resources
 }
 
 type podResourceRecommender struct {
@@ -61,9 +63,9 @@ func (r *podResourceRecommender) GetRecommendedPodResources(containerNameToAggre
 	}
 
 	fraction := 1.0 / float64(len(containerNameToAggregateStateMap))
-	minResources := model.Resources{
-		model.ResourceCPU:    model.ScaleResource(model.CPUAmountFromCores(*podMinCPUMillicores*0.001), fraction),
-		model.ResourceMemory: model.ScaleResource(model.MemoryAmountFromBytes(*podMinMemoryMb*1024*1024), fraction),
+	minResources := parent_model.Resources{
+		parent_model.ResourceCPU:    parent_model.ScaleResource(parent_model.CPUAmountFromCores(*podMinCPUMillicores*0.001), fraction),
+		parent_model.ResourceMemory: parent_model.ScaleResource(parent_model.MemoryAmountFromBytes(*podMinMemoryMb*1024*1024), fraction),
 	}
 
 	recommender := &podResourceRecommender{
@@ -82,19 +84,20 @@ func (r *podResourceRecommender) GetRecommendedPodResources(containerNameToAggre
 func (r *podResourceRecommender) estimateContainerResources(s *model.AggregateContainerState) RecommendedContainerResources {
 	// Perculate the resource estimation scale recommendation value using boolean
 	estimateTargetEstimator, toScaleTarget := r.targetEstimator.GetResourceEstimation(s)
+	// cpu := estimateTargetEstimator.
 	// if false to scale, then just reset the value
 	if !toScaleTarget {
-		estimateTargetEstimator = r.targetEstimator
+		estimateTargetEstimator = parent_model.Resources{} // No recommendation
 	}
 
 	estimateLowerBoundEstimator, toScaleLB := r.lowerBoundEstimator.GetResourceEstimation(s)
 	if !toScaleLB {
-		estimateLowerBoundEstimator = r.lowerBoundEstimator
+		estimateLowerBoundEstimator = parent_model.Resources{}
 	}
 
 	estimateUpperBoundEstimator, toScaleUB := r.upperBoundEstimator.GetResourceEstimation(s)
 	if !toScaleUB {
-		estimateUpperBoundEstimator = r.upperBoundEstimator
+		estimateUpperBoundEstimator = parent_model.Resources{}
 	}
 
 	return RecommendedContainerResources{
@@ -109,8 +112,8 @@ func (r *podResourceRecommender) estimateContainerResources(s *model.AggregateCo
 }
 
 // FilterControlledResources returns estimations from 'estimation' only for resources present in 'controlledResources'.
-func FilterControlledResources(estimation model.Resources, controlledResources []model.ResourceName) model.Resources {
-	result := make(model.Resources)
+func FilterControlledResources(estimation parent_model.Resources, controlledResources []parent_model.ResourceName) parent_model.Resources {
+	result := make(parent_model.Resources)
 	for _, resource := range controlledResources {
 		if value, ok := estimation[resource]; ok {
 			result[resource] = value
