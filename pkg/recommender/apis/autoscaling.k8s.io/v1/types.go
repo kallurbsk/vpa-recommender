@@ -334,24 +334,27 @@ type VerticalPodAutoscalerCheckpointStatus struct {
 	Version string `json:"version,omitempty" protobuf:"bytes,2,opt,name=version"`
 
 	// Checkpoint of histogram for consumption of CPU.
-	// CPUHistogram HistogramCheckpoint `json:"cpuHistogram,omitempty" protobuf:"bytes,3,rep,name=cpuHistograms"`
+	CPUHistogram HistogramCheckpoint `json:"cpuHistogram,omitempty" protobuf:"bytes,3,rep,name=cpuHistograms"`
 
 	// Checkpoint of histogram for consumption of memory.
-	// MemoryHistogram HistogramCheckpoint `json:"memoryHistogram,omitempty" protobuf:"bytes,4,rep,name=memoryHistogram"`
+	MemoryHistogram HistogramCheckpoint `json:"memoryHistogram,omitempty" protobuf:"bytes,4,rep,name=memoryHistogram"`
 
 	// Timestamp of the fist sample from the histograms.
-	// FirstSampleStart metav1.Time `json:"firstSampleStart,omitempty" protobuf:"bytes,5,opt,name=firstSampleStart"`
+	FirstSampleStart metav1.Time `json:"firstSampleStart,omitempty" protobuf:"bytes,5,opt,name=firstSampleStart"`
 
 	// Timestamp of the last sample from the histograms.
-	// LastSampleStart metav1.Time `json:"lastSampleStart,omitempty" protobuf:"bytes,6,opt,name=lastSampleStart"`
+	LastSampleStart metav1.Time `json:"lastSampleStart,omitempty" protobuf:"bytes,6,opt,name=lastSampleStart"`
 
 	// Total number of samples in the histograms.
-	// TotalSamplesCount int `json:"totalSamplesCount,omitempty" protobuf:"bytes,7,opt,name=totalSamplesCount"`
+	TotalSamplesCount int `json:"totalSamplesCount,omitempty" protobuf:"bytes,7,opt,name=totalSamplesCount"`
 
-	// TODO BSK: Adding changes to accomodate local maxima style of recommendation
-	LocalMaximaCPU              int64 // ResourceAmount is int64 so putting that as same here
-	LocalMaximaMemory           int64
-	LastLocalMaximaRecordedTime time.Time
+	// BSK: Adding changes to accomodate local maxima style of recommendation
+	LocalMaximaCPU              int64     `json:"local_maxima_cpu,omitempty"` // ResourceAmount is int64 so putting that as same here
+	LocalMaximaMemory           int64     `json:"local_maxima_memory,omitempty"`
+	LastLocalMaximaRecordedTime time.Time `json:"last_local_maxima_recorded_time,omitempty"`
+	TotalCPUSamplesCount        int       `json:"total_cpu_samples_count,omitempty"`
+	CurrentCtrCPUUsage          float64   `json:"current_ctr_cpu_usage,omitempty"`
+	CurrentCtrMemUsage          float64   `json:"current_ctr_mem_usage,omitempty"`
 }
 
 // HistogramCheckpoint contains data needed to reconstruct the histogram.
@@ -364,8 +367,4 @@ type HistogramCheckpoint struct {
 
 	// Sum of samples to be used as denominator for weights from BucketWeights.
 	TotalWeight float64 `json:"totalWeight,omitempty" protobuf:"bytes,3,opt,name=totalWeight"`
-}
-
-// LocalMaximaCheckpoint contains data needed to establish last recorded local maxima
-type LocalMaximaCheckpoint struct {
 }

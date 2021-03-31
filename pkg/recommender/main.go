@@ -1,9 +1,12 @@
 /*
 Copyright 2017 The Kubernetes Authors.
+
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
+
     http://www.apache.org/licenses/LICENSE-2.0
+
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -17,7 +20,9 @@ import (
 	"flag"
 	"time"
 
+	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/autoscaler/vertical-pod-autoscaler/common"
+	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input/history"
 	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
 	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/routines"
 	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/metrics"
@@ -26,13 +31,35 @@ import (
 	"k8s.io/client-go/rest"
 	kube_flag "k8s.io/component-base/cli/flag"
 	"k8s.io/klog"
-	// vpa_api "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1beta2"
 )
 
 var (
+	metricsFetcherInterval = flag.Duration("recommender-interval", 1*time.Minute, `How often metrics should be fetched`)
+	checkpointsGCInterval  = flag.Duration("checkpoints-gc-interval", 10*time.Minute, `How often orphaned checkpoints should be garbage collected`)
+	prometheusAddress      = flag.String("prometheus-address", "", `Where to reach for Prometheus metrics`)
+	prometheusJobName      = flag.String("prometheus-cadvisor-job-name", "kubernetes-cadvisor", `Name of the prometheus job name which scrapes the cAdvisor metrics`)
+	address                = flag.String("address", ":8942", "The address to expose Prometheus metrics.")
+	kubeApiQps             = flag.Float64("kube-api-qps", 5.0, `QPS limit when making requests to Kubernetes apiserver`)
+	kubeApiBurst           = flag.Float64("kube-api-burst", 10.0, `QPS burst limit when making requests to Kubernetes apiserver`)
+
+	storage = flag.String("storage", "", `Specifies storage mode. Supported values: prometheus, checkpoint (default)`)
+	// prometheus history provider configs
+	historyLength       = flag.String("history-length", "8d", `How much time back prometheus have to be queried to get historical metrics`)
+	historyResolution   = flag.String("history-resolution", "1h", `Resolution at which Prometheus is queried for historical metrics`)
+	queryTimeout        = flag.String("prometheus-query-timeout", "5m", `How long to wait before killing long queries`)
+	podLabelPrefix      = flag.String("pod-label-prefix", "pod_label_", `Which prefix to look for pod labels in metrics`)
+	podLabelsMetricName = flag.String("metric-for-pod-labels", "up{job=\"kubernetes-pods\"}", `Which metric to look for pod labels in metrics`)
+	podNamespaceLabel   = flag.String("pod-namespace-label", "kubernetes_namespace", `Label name to look for container names`)
+	podNameLabel        = flag.String("pod-name-label", "kubernetes_pod_name", `Label name to look for container names`)
+	ctrNamespaceLabel   = flag.String("container-namespace-label", "namespace", `Label name to look for container names`)
+	ctrPodNameLabel     = flag.String("container-pod-name-label", "pod_name", `Label name to look for container names`)
+	ctrNameLabel        = flag.String("container-name-label", "name", `Label name to look for container names`)
+	vpaObjectNamespace  = flag.String("vpa-object-namespace", apiv1.NamespaceAll, "Namespace to search for VPA objects and pod stats. Empty means all namespaces will be used.")
+
+	// new VPA
 	// TODO BSK: Remove unused variables in the new recommender
 	// Update the below 6 flags in the VerticalPodAutoscalerCheckpointStatus in vertical-pod-autoscaler/e2e/vendor/k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1/types.go so that they can be fetched later.
-	metricsFetcherInterval     = flag.Duration("recommender-interval", 1*time.Minute, `How often metrics should be fetched`)
+	//metricsFetcherInterval     = flag.Duration("recommender-interval", 1*time.Minute, `How often metrics should be fetched`)
 	lastCrashCountTime         = flag.Float64("last-crash-count-time", 0, `Time at which last pod crash happened`)
 	thesholdNoCrashes          = flag.Int64("threshold-crash-number", 3, `Number of pod crashes to withstand before scaling up both CPU and memory resources irrespective of usage`)
 	timeSinceLastCrash         = flag.Duration("time-since-last-crash", 0, `Difference between current system time and last crash recorded time`)
@@ -40,28 +67,12 @@ var (
 	scaleDownMonitorTimeWindow = flag.Duration("scale-down-monitor-time-window", 60*time.Minute, `How much past time from current time should be considered for getting local maxima values of resource usage for scaling down`)
 	thresholdScaleUp           = flag.Float64("threshold-scale-up", 0.75, "threshold value beyond which VPA scale up should kick in")
 	thresholdScaleDown         = flag.Float64("threshold-scale-down", 0.25, "threshold value below which VPA scale down should kick in")
-	thresholdMonitorTimeWindow = flag.Duration("threshold-monitor-time-window", 30*time.Minute, `Time window to get local maxima of CPU and memory usage till the curren time`)
-	kubeApiQps                 = flag.Float64("kube-api-qps", 5.0, `QPS limit when making requests to Kubernetes apiserver`)
-	kubeApiBurst               = flag.Float64("kube-api-burst", 10.0, `QPS burst limit when making requests to Kubernetes apiserver`)
-	checkpointsGCInterval      = flag.Duration("checkpoints-gc-interval", 10*time.Minute, `How often orphaned checkpoints should be garbage collected`)
-	// prometheusAddress      = flag.String("prometheus-address", "", `Where to reach for Prometheus metrics`)
-	// prometheusJobName      = flag.String("prometheus-cadvisor-job-name", "kubernetes-cadvisor", `Name of the prometheus job name which scrapes the cAdvisor metrics`)
-	address = flag.String("address", ":8942", "The address to expose Prometheus metrics.")
-
-	// TODO BSK: change storage to default of current usage
-	storage = flag.String("storage", "", `Specifies storage mode. Supported values: prometheus, checkpoint (default)`)
-	// prometheus history provider configs
-	// historyLength       = flag.String("history-length", "8d", `How much time back prometheus have to be queried to get historical metrics`)
-	// historyResolution   = flag.String("history-resolution", "1h", `Resolution at which Prometheus is queried for historical metrics`)
-	// queryTimeout        = flag.String("prometheus-query-timeout", "5m", `How long to wait before killing long queries`)
-	// podLabelPrefix      = flag.String("pod-label-prefix", "pod_label_", `Which prefix to look for pod labels in metrics`)
-	// podLabelsMetricName = flag.String("metric-for-pod-labels", "up{job=\"kubernetes-pods\"}", `Which metric to look for pod labels in metrics`)
-	// podNamespaceLabel   = flag.String("pod-namespace-label", "kubernetes_namespace", `Label name to look for container names`)
-	// podNameLabel        = flag.String("pod-name-label", "kubernetes_pod_name", `Label name to look for container names`)
-	// ctrNamespaceLabel   = flag.String("container-namespace-label", "namespace", `Label name to look for container names`)
-	// ctrPodNameLabel     = flag.String("container-pod-name-label", "pod_name", `Label name to look for container names`)
-	// ctrNameLabel        = flag.String("container-name-label", "name", `Label name to look for container names`)
-	vpaObjectNamespace = flag.String("vpa-object-namespace", apiv1.NamespaceAll, "Namespace to search for VPA objects and pod stats. Empty means all namespaces will be used.")
+	//thresholdMonitorTimeWindow = flag.Duration("threshold-monitor-time-window", 30*time.Minute, `Time window to get local maxima of CPU and memory usage till the curren time`)
+	//kubeApiQps                 = flag.Float64("kube-api-qps", 5.0, `QPS limit when making requests to Kubernetes apiserver`)
+	//kubeApiBurst               = flag.Float64("kube-api-burst", 10.0, `QPS burst limit when making requests to Kubernetes apiserver`)
+	//checkpointsGCInterval      = flag.Duration("checkpoints-gc-interval", 10*time.Minute, `How often orphaned checkpoints should be garbage collected`)
+	//kubeApiQps                 = flag.Float64("kube-api-qps", 5.0, `QPS limit when making requests to Kubernetes apiserver`)
+	//kubeApiBurst               = flag.Float64("kube-api-burst", 10.0, `QPS burst limit when making requests to Kubernetes apiserver`)
 )
 
 // Aggregation configuration flags
@@ -70,12 +81,9 @@ var (
 	memoryAggregationIntervalCount = flag.Int64("memory-aggregation-interval-count", model.DefaultMemoryAggregationIntervalCount, `The number of consecutive memory-aggregation-intervals which make up the MemoryAggregationWindowLength which in turn is the period for memory usage aggregation by VPA. In other words, MemoryAggregationWindowLength = memory-aggregation-interval * memory-aggregation-interval-count.`)
 	memoryHistogramDecayHalfLife   = flag.Duration("memory-histogram-decay-half-life", model.DefaultMemoryHistogramDecayHalfLife, `The amount of time it takes a historical memory usage sample to lose half of its weight. In other words, a fresh usage sample is twice as 'important' as one with age equal to the half life period.`)
 	cpuHistogramDecayHalfLife      = flag.Duration("cpu-histogram-decay-half-life", model.DefaultCPUHistogramDecayHalfLife, `The amount of time it takes a historical CPU usage sample to lose half of its weight.`)
-)
-
-// TODO BSK : new scale values
-const (
-	// Going by the logic of doubling the resources based on the usage, we use this value
-	scaleUpMultiple = 2.0
+	thresholdMonitorTimeWindow     = flag.Duration("threshold-monitor-time-window", 30*time.Minute, `Time window to get local maxima of CPU and memory usage till the curren time`)
+	scaleUpMultiple                = flag.Float64("scale-up-multiple", 2.0, "Scaling factor which needs to applied for resource scale up")
+	thresholdNumCrashes            = flag.Int("threshold-num-crashes", 3, "Total number of crashes to withstand before doubling both CPU and memory irrespective of usage")
 )
 
 func main() {
@@ -85,7 +93,18 @@ func main() {
 
 	config := createKubeConfig(float32(*kubeApiQps), int(*kubeApiBurst))
 
-	model.InitializeAggregationsConfig(model.NewAggregationsConfig(*memoryAggregationInterval, *memoryAggregationIntervalCount, *memoryHistogramDecayHalfLife, *cpuHistogramDecayHalfLife))
+	model.InitializeAggregationsConfig(
+		model.NewAggregationsConfig(
+			*memoryAggregationInterval,
+			*memoryAggregationIntervalCount,
+			*memoryHistogramDecayHalfLife,
+			*cpuHistogramDecayHalfLife,
+			*thresholdMonitorTimeWindow,
+			*thresholdScaleUp,
+			*thresholdScaleDown,
+			*scaleDownSafetyMargin,
+			*scaleUpMultiple,
+			*thresholdNumCrashes))
 
 	healthCheck := metrics.NewHealthCheck(*metricsFetcherInterval*5, true)
 	metrics.Initialize(*address, healthCheck)
@@ -95,43 +114,39 @@ func main() {
 	useCheckpoints := *storage != "prometheus"
 	recommender := routines.NewRecommender(config, *checkpointsGCInterval, useCheckpoints, *vpaObjectNamespace)
 
-	// promQueryTimeout, err := time.ParseDuration(*queryTimeout)
-	// if err != nil {
-	// 	klog.Fatalf("Could not parse --prometheus-query-timeout as a time.Duration: %v", err)
-	// }
+	promQueryTimeout, err := time.ParseDuration(*queryTimeout)
+	if err != nil {
+		klog.Fatalf("Could not parse --prometheus-query-timeout as a time.Duration: %v", err)
+	}
 
-	// TODO BSK : we are going to use checkpoint for loading the latest data and also anything previously stored
 	if useCheckpoints {
 		recommender.GetClusterStateFeeder().InitFromCheckpoints()
 	} else {
-		// TODO BSK: The actual code for recommender Init based on current usage appears here.
-
-		// Below code was calling PrometheusHistoryProviderConfig.
-		// Instead of that we will need to use current usage provider config alike
-		// config := history.PrometheusHistoryProviderConfig{
-		// 	Address:                *prometheusAddress,
-		// 	QueryTimeout:           promQueryTimeout,
-		// 	HistoryLength:          *historyLength,
-		// 	HistoryResolution:      *historyResolution,
-		// 	PodLabelPrefix:         *podLabelPrefix,
-		// 	PodLabelsMetricName:    *podLabelsMetricName,
-		// 	PodNamespaceLabel:      *podNamespaceLabel,
-		// 	PodNameLabel:           *podNameLabel,
-		// 	CtrNamespaceLabel:      *ctrNamespaceLabel,
-		// 	CtrPodNameLabel:        *ctrPodNameLabel,
-		// 	CtrNameLabel:           *ctrNameLabel,
-		// 	CadvisorMetricsJobName: *prometheusJobName,
-		// 	Namespace:              *vpaObjectNamespace,
-		// }
-		// provider, err := history.NewPrometheusHistoryProvider(config)
-		// if err != nil {
-		// 	klog.Fatalf("Could not initialize history provider: %v", err)
-		// }
-		// recommender.GetClusterStateFeeder().InitFromHistoryProvider(provider)
+		config := history.PrometheusHistoryProviderConfig{
+			Address:                *prometheusAddress,
+			QueryTimeout:           promQueryTimeout,
+			HistoryLength:          *historyLength,
+			HistoryResolution:      *historyResolution,
+			PodLabelPrefix:         *podLabelPrefix,
+			PodLabelsMetricName:    *podLabelsMetricName,
+			PodNamespaceLabel:      *podNamespaceLabel,
+			PodNameLabel:           *podNameLabel,
+			CtrNamespaceLabel:      *ctrNamespaceLabel,
+			CtrPodNameLabel:        *ctrPodNameLabel,
+			CtrNameLabel:           *ctrNameLabel,
+			CadvisorMetricsJobName: *prometheusJobName,
+			Namespace:              *vpaObjectNamespace,
+		}
+		provider, err := history.NewPrometheusHistoryProvider(config)
+		if err != nil {
+			klog.Fatalf("Could not initialize history provider: %v", err)
+		}
+		recommender.GetClusterStateFeeder().InitFromHistoryProvider(provider)
 	}
 
 	ticker := time.Tick(*metricsFetcherInterval)
 	for range ticker {
+		// TODO BSK: also add the update to get the details every minute here
 		recommender.RunOnce()
 		healthCheck.UpdateLastActivity()
 	}

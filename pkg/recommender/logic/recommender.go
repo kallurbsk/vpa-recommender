@@ -1,9 +1,12 @@
 /*
 Copyright 2017 The Kubernetes Authors.
+
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
+
     http://www.apache.org/licenses/LICENSE-2.0
+
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -17,6 +20,7 @@ import (
 	"flag"
 
 	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
+	"k8s.io/klog"
 )
 
 var (
@@ -76,10 +80,31 @@ func (r *podResourceRecommender) GetRecommendedPodResources(containerNameToAggre
 
 // Takes AggregateContainerState and returns a container recommendation.
 func (r *podResourceRecommender) estimateContainerResources(s *model.AggregateContainerState) RecommendedContainerResources {
+	// Perculate the resource estimation scale recommendation value using boolean
+	estimateTargetEstimator, toScaleTarget := r.targetEstimator.GetResourceEstimation(s)
+	// if false to scale, then just reset the value
+	if !toScaleTarget {
+		estimateTargetEstimator = r.targetEstimator
+	}
+
+	estimateLowerBoundEstimator, toScaleLB := r.lowerBoundEstimator.GetResourceEstimation(s)
+	if !toScaleLB {
+		estimateLowerBoundEstimator = r.lowerBoundEstimator
+	}
+
+	estimateUpperBoundEstimator, toScaleUB := r.upperBoundEstimator.GetResourceEstimation(s)
+	if !toScaleUB {
+		estimateUpperBoundEstimator = r.upperBoundEstimator
+	}
+
 	return RecommendedContainerResources{
-		FilterControlledResources(r.targetEstimator.GetResourceEstimation(s), s.GetControlledResources()),
-		FilterControlledResources(r.lowerBoundEstimator.GetResourceEstimation(s), s.GetControlledResources()),
-		FilterControlledResources(r.upperBoundEstimator.GetResourceEstimation(s), s.GetControlledResources()),
+		// FilterControlledResources(r.targetEstimator.GetResourceEstimation(s), s.GetControlledResources())
+		FilterControlledResources(estimateTargetEstimator, s.GetControlledResources()),
+		// add an if else to get the GetREsourceEstimation
+		// FilterControlledResources(r.lowerBoundEstimator.GetResourceEstimation(s), s.GetControlledResources()),
+		FilterControlledResources(estimateLowerBoundEstimator, s.GetControlledResources()),
+		// FilterControlledResources(r.upperBoundEstimator.GetResourceEstimation(s), s.GetControlledResources()),
+		FilterControlledResources(estimateUpperBoundEstimator, s.GetControlledResources()),
 	}
 }
 
@@ -96,9 +121,8 @@ func FilterControlledResources(estimation model.Resources, controlledResources [
 
 // CreatePodResourceRecommender returns the primary recommender.
 func CreatePodResourceRecommender() PodResourceRecommender {
+	// BSK: New VPA recommender code
 
-	// While targetFactor is determined using current usage for both CPU and memory,
-	// lower bound and upper bounds are estimated using targetCPUFactor itself
 	targetCPUFactor := 2.0
 	lowerBoundCPUFactor := targetCPUFactor / 2.0
 	upperBoundCPUFactor := 2.0 * targetCPUFactor
@@ -110,10 +134,16 @@ func CreatePodResourceRecommender() PodResourceRecommender {
 	targetScaleEstimator := NewScaleValueEstimator(targetCPUFactor, targetMemoryFactor)
 	lowerBoundScaleEstimator := NewScaleValueEstimator(lowerBoundCPUFactor, lowerBoundMemoryFactor)
 	upperBoundScaleEstimator := NewScaleValueEstimator(upperBoundCPUFactor, upperBoundMemoryFactor)
+	klog.V(1).Infof("BSK recommender logic targetScaleEstimator = %+v", targetScaleEstimator)
+	klog.V(1).Infof("BSK recommender logic lowerBoundScaleEstimator = %+v", lowerBoundScaleEstimator)
+	klog.V(1).Infof("BSK recommender logic upperBoundScaleEstimator = %+v", upperBoundScaleEstimator)
 
 	targetEstimator := WithMargin(*safetyMarginFraction, targetScaleEstimator)
 	lowerBoundEstimator := WithMargin(*safetyMarginFraction, lowerBoundScaleEstimator)
 	upperBoundEstimator := WithMargin(*safetyMarginFraction, upperBoundScaleEstimator)
+	klog.V(1).Infof("BSK 2x recommender logic targetEstimator = %+v", targetEstimator)
+	klog.V(1).Infof("BSK 2x recommender logic lowerBoundEstimator = %+v", lowerBoundEstimator)
+	klog.V(1).Infof("BSK 2x recommender logic upperBoundEstimator = %+v", upperBoundEstimator)
 
 	return &podResourceRecommender{
 		targetEstimator,
