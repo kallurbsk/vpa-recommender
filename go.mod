@@ -3,6 +3,7 @@ module vpa-recommender
 go 1.15
 
 require (
+	github.com/prometheus/client_golang v1.7.1
 	github.com/stretchr/testify v1.7.0
 	k8s.io/api v0.20.5
 	k8s.io/apimachinery v0.20.5
