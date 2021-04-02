@@ -20,8 +20,6 @@ import (
 	"sort"
 	"time"
 
-	// vpa_api_util "vpa-recommender/pkg/utils/vpa"
-
 	autoscaling "k8s.io/api/autoscaling/v1"
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

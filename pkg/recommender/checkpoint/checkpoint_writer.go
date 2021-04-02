@@ -18,9 +18,11 @@ package checkpoint
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"time"
+	"vpa-recommender/pkg/recommender/model"
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -29,7 +31,7 @@ import (
 
 	vpa_api "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/client/clientset/versioned/typed/autoscaling.k8s.io/v1"
 
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
+	// "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
 
 	api_util "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/vpa"
 	"k8s.io/klog"
@@ -46,6 +48,17 @@ type CheckpointWriter interface {
 type checkpointWriter struct {
 	vpaCheckpointClient vpa_api.VerticalPodAutoscalerCheckpointsGetter
 	cluster             *model.ClusterState
+}
+
+// customVPAAnnotations struct for storing annotations for the latest status of the variables of custom VPA
+type CustomVPAAnnotations struct {
+	LocalMaximaCPU              float64
+	LocalMaximaMemory           float64
+	LastLocalMaximaRecordedTime time.Time
+	TotalCPUSamplesCount        int
+	TotalMemorySamplesCount     int
+	CurrentCtrCPUUsage          float64
+	CurrentCtrMemUsage          float64
 }
 
 // NewCheckpointWriter returns new instance of a CheckpointWriter
@@ -104,8 +117,27 @@ func (writer *checkpointWriter) StoreCheckpoints(ctx context.Context, now time.T
 			}
 			checkpointName := fmt.Sprintf("%s-%s", vpa.ID.VpaName, container)
 			// TODO BSK : Check if the recommendation has to be updated here to VPACheckpoint as annotation
+			vpaAnnotations := CustomVPAAnnotations{
+				LocalMaximaCPU:              float64(aggregatedContainerState.LastCtrCPULocalMaxima.Usage),
+				LocalMaximaMemory:           float64(aggregatedContainerState.LastCtrMemoryLocalMaxima.Usage),
+				LastLocalMaximaRecordedTime: aggregatedContainerState.LastLocalMaximaRecordedTime,
+				TotalCPUSamplesCount:        aggregatedContainerState.TotalCPUSamplesCount,
+				TotalMemorySamplesCount:     aggregatedContainerState.TotalMemorySamplesCount,
+				CurrentCtrCPUUsage:          aggregatedContainerState.CurrentCtrCPUUsage,
+				CurrentCtrMemUsage:          aggregatedContainerState.CurrentCtrMemUsage,
+			}
+
+			vpaData, err := json.Marshal(vpaAnnotations)
+			if err != nil {
+				klog.Errorf("Cannot serialize checkpoint for vpa %v container %v. Reason: %+v", vpa.ID.VpaName, container, err)
+				continue
+			}
+
+			annotates := make(map[string]string)
+			annotates["vpaData"] = string(vpaData) // Useful data which gets updated for every VPA recommender call
+
 			vpaCheckpoint := vpa_types.VerticalPodAutoscalerCheckpoint{
-				ObjectMeta: metav1.ObjectMeta{Name: checkpointName},
+				ObjectMeta: metav1.ObjectMeta{Name: checkpointName, Annotations: annotates},
 				Spec: vpa_types.VerticalPodAutoscalerCheckpointSpec{
 					ContainerName: container,
 					VPAObjectName: vpa.ID.VpaName,

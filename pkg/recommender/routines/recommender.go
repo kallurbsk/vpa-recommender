@@ -20,6 +20,7 @@ import (
 	"autoscaler/vertical-pod-autoscaler/pkg/recommender/logic"
 	"autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
 	"context"
+	"encoding/json"
 	"flag"
 	"time"
 
@@ -123,12 +124,28 @@ func (r *recommender) UpdateVPAs() {
 		}
 		cnt.Add(vpa)
 
-		_, err := vpa_utils.UpdateVpaStatusIfNeeded(
-			r.vpaClient.VerticalPodAutoscalers(vpa.ID.Namespace), vpa.ID.VpaName, vpa.AsStatus(), &observedVpa.Status)
+		// TODO BSK : catch the object instead of _ This is the VPA object. Add annotations to it.
+		// _, err := vpa_utils.UpdateVpaStatusIfNeeded(
+		// 	r.vpaClient.VerticalPodAutoscalers(vpa.ID.Namespace), vpa.ID.VpaName, vpa.AsStatus(), &observedVpa.Status)
+
+		newVPAStatus := vpa.AsStatus()
+		verticalPodAutoscaler, err := vpa_utils.UpdateVpaStatusIfNeeded(
+			r.vpaClient.VerticalPodAutoscalers(vpa.ID.Namespace), vpa.ID.VpaName, newVPAStatus, &observedVpa.Status)
 		if err != nil {
 			klog.Errorf(
 				"Cannot update VPA %v object. Reason: %+v", vpa.ID.VpaName, err)
 		}
+		newVPAStatusData, err := json.Marshal(newVPAStatus)
+		if err != nil {
+			klog.Errorf(
+				"JSON Marshalling error for VPA object %v. Reason: %+v", vpa.ID.VpaName, err)
+		}
+
+		vpaStatusAnnotate := make(map[string]string)
+		vpaStatusAnnotate["vpa-recommender.gardener.cloud/status"] = string(newVPAStatusData)
+
+		verticalPodAutoscaler.ObjectMeta.Annotations = vpaStatusAnnotate
+
 	}
 }
 
