@@ -57,8 +57,8 @@ type CustomVPAAnnotations struct {
 	LastLocalMaximaRecordedTime time.Time
 	TotalCPUSamplesCount        int
 	TotalMemorySamplesCount     int
-	CurrentCtrCPUUsage          float64
-	CurrentCtrMemUsage          float64
+	CurrentCtrCPUUsage          *model.ContainerUsageSample
+	CurrentCtrMemUsage          *model.ContainerUsageSample
 }
 
 // NewCheckpointWriter returns new instance of a CheckpointWriter

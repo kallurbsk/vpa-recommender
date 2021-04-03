@@ -18,8 +18,11 @@ package input
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
+
+	"vpa-recommender/pkg/recommender/model"
 
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -35,7 +38,8 @@ import (
 	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input/metrics"
 	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input/oom"
 	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input/spec"
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
+
+	// "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
 	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/target"
 	metrics_recommender "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/metrics/recommender"
 	vpa_api_util "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/vpa"
@@ -239,16 +243,20 @@ func (feeder *clusterStateFeeder) setVpaCheckpoint(checkpoint *vpa_types.Vertica
 	cs := model.NewAggregateContainerState()
 	err := cs.LoadFromCheckpoint(&checkpoint.Status)
 	// BSK : Loading other custom VPA parameters from annotations
-	annotations = checkpoint.ObjectMeta.Annotations["vpaData"]
+	annotations := checkpoint.ObjectMeta.Annotations["vpaData"]
+	var vpaData map[string]interface{}
+	if err := json.Unmarshal([]byte(annotations), &vpaData); err != nil {
+		return fmt.Errorf("cannot load checkpoint details of VPA %v. Reason: %v", vpa.ID, err)
+	}
 
 	// TODO BSK : Check if below 2 last CPU and memory assignments result in segfault incase.
-	cs.LastCtrCPULocalMaxima = annotations["LastCtrCPULocalMaxima"]
-	cs.LastCtrMemoryLocalMaxima = annotations["LastCtrMemoryLocalMaxima"]
-	cs.LastLocalMaximaRecordedTime = annotations["LastLocalMaximaRecordedTime"]
-	cs.TotalCPUSamplesCount = annotations["TotalCPUSamplesCount"]
-	cs.TotalMemorySamplesCount = annotations["TotalMemorySamplesCount"]
-	cs.CurrentCtrCPUUsage = annotations["CurrentCtrCPUUsage"]
-	cs.CurrentCtrMemUsage = annotations["CurrentCtrMemUsage"]
+	cs.LastCtrCPULocalMaxima = vpaData["LastCtrCPULocalMaxima"].(*model.ContainerUsageSample)
+	cs.LastCtrMemoryLocalMaxima = vpaData["LastCtrMemoryLocalMaxima"].(*model.ContainerUsageSample)
+	cs.LastLocalMaximaRecordedTime = vpaData["LastLocalMaximaRecordedTime"].(time.Time)
+	cs.TotalCPUSamplesCount = vpaData["TotalCPUSamplesCount"].(int)
+	cs.TotalMemorySamplesCount = vpaData["TotalMemorySamplesCount"].(int)
+	cs.CurrentCtrCPUUsage = vpaData["CurrentCtrCPUUsage"].(*model.ContainerUsageSample)
+	cs.CurrentCtrMemUsage = vpaData["CurrentCtrMemUsage"].(*model.ContainerUsageSample)
 
 	if err != nil {
 		return fmt.Errorf("cannot load checkpoint for VPA %+v. Reason: %v", vpa.ID, err)

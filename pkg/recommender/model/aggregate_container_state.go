@@ -38,12 +38,9 @@ package model
 import (
 	// "autoscaler/vertical-pod-autoscaler/pkg/recommender/util"
 	"fmt"
-	"log"
 	"math"
 	"time"
 
-	// vpa_types "vpa-recommender/pkg/apis/autoscaling.k8s.io/v1"
-	// "vpa-recommender/pkg/recommender/util"
 	vpa_types "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
 	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/util"
 
@@ -122,8 +119,8 @@ type AggregateContainerState struct {
 
 	LastCtrCPULocalMaxima       *ContainerUsageSample
 	LastCtrMemoryLocalMaxima    *ContainerUsageSample
-	CurrentCtrCPUUsage          float64
-	CurrentCtrMemUsage          float64
+	CurrentCtrCPUUsage          *ContainerUsageSample
+	CurrentCtrMemUsage          *ContainerUsageSample
 	LastLocalMaximaRecordedTime time.Time
 	TimeWindowForLocalMaxima    time.Duration
 	RestartCountSinceLastOOM    int64
@@ -212,6 +209,20 @@ func NewAggregateContainerState() *AggregateContainerState {
 		Resource:     ResourceMemory,
 	}
 
+	currentCtrCPUUsage := &ContainerUsageSample{
+		MeasureStart: time.Now(),
+		Request:      0,
+		Usage:        0,
+		Resource:     ResourceCPU,
+	}
+
+	currentCtrMemUsage := &ContainerUsageSample{
+		MeasureStart: time.Now(),
+		Request:      0,
+		Usage:        0,
+		Resource:     ResourceMemory,
+	}
+
 	return &AggregateContainerState{
 		AggregateCPUUsage:    util.NewDecayingHistogram(config.CPUHistogramOptions, config.CPUHistogramDecayHalfLife),
 		AggregateMemoryPeaks: util.NewDecayingHistogram(config.MemoryHistogramOptions, config.MemoryHistogramDecayHalfLife),
@@ -223,8 +234,8 @@ func NewAggregateContainerState() *AggregateContainerState {
 		ScaleDownSafetyMargin:       config.ScaleDownSafetyMargin,
 		ScaleUpValue:                config.ScaleUpValue,
 		ThresholdNumCrashes:         config.ThresholdNumCrashes,
-		CurrentCtrCPUUsage:          0.0,
-		CurrentCtrMemUsage:          0.0,
+		CurrentCtrCPUUsage:          currentCtrCPUUsage,
+		CurrentCtrMemUsage:          currentCtrMemUsage,
 		LastCtrCPULocalMaxima:       lastCtrCPULocalMaxima,
 		LastCtrMemoryLocalMaxima:    lastCtrMemLocalMaxima,
 		LastLocalMaximaRecordedTime: time.Now(),
@@ -235,14 +246,12 @@ func NewAggregateContainerState() *AggregateContainerState {
 	}
 }
 
-func (a *AggregateContainerState) setCPUUsage(sample *ContainerUsageSample) {
-	a.CurrentCtrCPUUsage = CoresFromCPUAmount(sample.Usage)
-	log.Printf("BSK ACS a.CurrentCPUUsage = %v", a.CurrentCtrCPUUsage)
+func (a *AggregateContainerState) SetCPUUsage(sample *ContainerUsageSample) {
+	a.CurrentCtrCPUUsage = sample
 }
 
-func (a *AggregateContainerState) setMemUsage(sample *ContainerUsageSample) {
-	a.CurrentCtrMemUsage = BytesFromMemoryAmount(sample.Usage)
-	log.Printf("BSK ACS a.CurrentCtrMemUsage = %v", a.CurrentCtrMemUsage)
+func (a *AggregateContainerState) SetMemUsage(sample *ContainerUsageSample) {
+	a.CurrentCtrMemUsage = sample
 }
 
 // AddSample aggregates a single usage sample.
@@ -252,12 +261,12 @@ func (a *AggregateContainerState) AddSample(sample *ContainerUsageSample) {
 		a.addCPUSample(sample)
 		// BSK : NEW VPA
 		a.addCPULocalMaxima(sample)
-		a.setCPUUsage(sample)
+		a.SetCPUUsage(sample)
 	case ResourceMemory:
 		a.AggregateMemoryPeaks.AddSample(BytesFromMemoryAmount(sample.Usage), 1.0, sample.MeasureStart)
 		// BSK : NEW VPA
 		a.addMemoryLocalMaxima(sample)
-		a.setMemUsage(sample)
+		a.SetMemUsage(sample)
 	default:
 		panic(fmt.Sprintf("AddSample doesn't support resource '%s'", sample.Resource))
 	}

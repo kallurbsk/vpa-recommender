@@ -23,14 +23,14 @@ import (
 	model "vpa-recommender/pkg/recommender/model"
 
 	"github.com/stretchr/testify/assert"
-	parent_model "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
+	// parent_model "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
 )
 
 var (
 	anyTime     = time.Unix(0, 0)
-	testRequest = parent_model.Resources{
-		parent_model.ResourceCPU:    parent_model.CPUAmountFromCores(3.14),
-		parent_model.ResourceMemory: parent_model.MemoryAmountFromBytes(3.14e9),
+	testRequest = model.Resources{
+		model.ResourceCPU:    model.CPUAmountFromCores(3.14),
+		model.ResourceMemory: model.MemoryAmountFromBytes(3.14e9),
 	}
 )
 
@@ -68,9 +68,9 @@ var (
 // returned by the base estimator according to the formula, using the calculated
 // confidence.
 func TestConfidenceMultiplier(t *testing.T) {
-	baseEstimator := NewConstEstimator(parent_model.Resources{
-		parent_model.ResourceCPU:    parent_model.CPUAmountFromCores(3.14),
-		parent_model.ResourceMemory: parent_model.MemoryAmountFromBytes(3.14e9),
+	baseEstimator := NewConstEstimator(model.Resources{
+		model.ResourceCPU:    model.CPUAmountFromCores(3.14),
+		model.ResourceMemory: model.MemoryAmountFromBytes(3.14e9),
 	})
 	testedEstimator := &confidenceMultiplier{0.1, 2.0, baseEstimator}
 
@@ -78,8 +78,8 @@ func TestConfidenceMultiplier(t *testing.T) {
 	// Add 9 CPU samples at the frequency of 1/(2 mins).
 	timestamp := anyTime
 	for i := 1; i <= 9; i++ {
-		s.AddSample(&parent_model.ContainerUsageSample{
-			timestamp, parent_model.CPUAmountFromCores(1.0), testRequest[parent_model.ResourceCPU], parent_model.ResourceCPU})
+		s.AddSample(&model.ContainerUsageSample{
+			timestamp, model.CPUAmountFromCores(1.0), testRequest[model.ResourceCPU], model.ResourceCPU})
 		timestamp = timestamp.Add(time.Minute * 2)
 	}
 
@@ -88,7 +88,7 @@ func TestConfidenceMultiplier(t *testing.T) {
 	// Expected CPU estimation = 3.14 * (1 + 1/confidence)^exponent =
 	// 3.14 * (1 + 0.1/0.00625)^2 = 907.46.
 	resourceEstimation, _ := testedEstimator.GetResourceEstimation(s)
-	assert.Equal(t, 907.46, parent_model.CoresFromCPUAmount(resourceEstimation[parent_model.ResourceCPU]))
+	assert.Equal(t, 907.46, model.CoresFromCPUAmount(resourceEstimation[model.ResourceCPU]))
 }
 
 // Verifies that the confidenceMultiplier works for the case of no
@@ -115,9 +115,9 @@ func TestConfidenceMultiplier(t *testing.T) {
 func TestMarginEstimator(t *testing.T) {
 	// Use 10% margin on top of the recommended resources.
 	marginFraction := 0.1
-	baseEstimator := NewConstEstimator(parent_model.Resources{
-		parent_model.ResourceCPU:    parent_model.CPUAmountFromCores(3.14),
-		parent_model.ResourceMemory: parent_model.MemoryAmountFromBytes(3.14e9),
+	baseEstimator := NewConstEstimator(model.Resources{
+		model.ResourceCPU:    model.CPUAmountFromCores(3.14),
+		model.ResourceMemory: model.MemoryAmountFromBytes(3.14e9),
 	})
 	testedEstimator := &marginEstimator{
 		marginFraction: marginFraction,
@@ -125,20 +125,20 @@ func TestMarginEstimator(t *testing.T) {
 	}
 	s := model.NewAggregateContainerState()
 	resourceEstimation, _ := testedEstimator.GetResourceEstimation(s)
-	assert.Equal(t, 3.14*1.1, parent_model.CoresFromCPUAmount(resourceEstimation[parent_model.ResourceCPU]))
-	assert.Equal(t, 3.14e9*1.1, parent_model.BytesFromMemoryAmount(resourceEstimation[parent_model.ResourceMemory]))
+	assert.Equal(t, 3.14*1.1, model.CoresFromCPUAmount(resourceEstimation[model.ResourceCPU]))
+	assert.Equal(t, 3.14e9*1.1, model.BytesFromMemoryAmount(resourceEstimation[model.ResourceMemory]))
 }
 
 // Verifies that the MinResourcesEstimator returns at least MinResources.
 func TestMinResourcesEstimator(t *testing.T) {
 
-	minResources := parent_model.Resources{
-		parent_model.ResourceCPU:    parent_model.CPUAmountFromCores(0.2),
-		parent_model.ResourceMemory: parent_model.MemoryAmountFromBytes(4e8),
+	minResources := model.Resources{
+		model.ResourceCPU:    model.CPUAmountFromCores(0.2),
+		model.ResourceMemory: model.MemoryAmountFromBytes(4e8),
 	}
-	baseEstimator := NewConstEstimator(parent_model.Resources{
-		parent_model.ResourceCPU:    parent_model.CPUAmountFromCores(3.14),
-		parent_model.ResourceMemory: parent_model.MemoryAmountFromBytes(2e7),
+	baseEstimator := NewConstEstimator(model.Resources{
+		model.ResourceCPU:    model.CPUAmountFromCores(3.14),
+		model.ResourceMemory: model.MemoryAmountFromBytes(2e7),
 	})
 
 	testedEstimator := &minResourcesEstimator{
@@ -148,9 +148,9 @@ func TestMinResourcesEstimator(t *testing.T) {
 	s := model.NewAggregateContainerState()
 	resourceEstimation, _ := testedEstimator.GetResourceEstimation(s)
 	// Original CPU is above min resources
-	assert.Equal(t, 3.14, parent_model.CoresFromCPUAmount(resourceEstimation[parent_model.ResourceCPU]))
+	assert.Equal(t, 3.14, model.CoresFromCPUAmount(resourceEstimation[model.ResourceCPU]))
 	// Original Memory is below min resources
-	assert.Equal(t, 4e8, parent_model.BytesFromMemoryAmount(resourceEstimation[parent_model.ResourceMemory]))
+	assert.Equal(t, 4e8, model.BytesFromMemoryAmount(resourceEstimation[model.ResourceMemory]))
 }
 
 func TestScaledResourceEstimator(t *testing.T) {
@@ -159,13 +159,32 @@ func TestScaledResourceEstimator(t *testing.T) {
 		memScaleValue: 2.0,
 	}
 
-	acs := &model.AggregateContainerState{
-		CurrentCtrCPUUsage: 3.14,
-		CurrentCtrMemUsage: 2e7,
+	acs := model.NewAggregateContainerState()
+	// Add 9 CPU samples at the frequency of 1/(2 mins).
+	timestamp := anyTime
+	for i := 1; i <= 9; i++ {
+		acs.AddSample(&model.ContainerUsageSample{
+			timestamp, model.CPUAmountFromCores(1.0), testRequest[model.ResourceCPU], model.ResourceCPU})
+		timestamp = timestamp.Add(time.Minute * 2)
 	}
+
+	acs.SetCPUUsage(&model.ContainerUsageSample{
+		timestamp, model.CPUAmountFromCores(6), testRequest[model.ResourceCPU], model.ResourceCPU})
+
+	acs.SetMemUsage(&model.ContainerUsageSample{
+		timestamp, model.MemoryAmountFromBytes(3.14e8), testRequest[model.ResourceMemory], model.ResourceMemory})
+
+	acs.LastCtrCPULocalMaxima = &model.ContainerUsageSample{
+		timestamp, model.CPUAmountFromCores(4.0), testRequest[model.ResourceCPU], model.ResourceCPU}
+
 	resourceEstimation, _ := scaledEstimator.GetResourceEstimation(acs)
-	assert.Equal(t, 6.28, parent_model.CoresFromCPUAmount(resourceEstimation[parent_model.ResourceCPU]))
-	assert.Equal(t, 4e7, parent_model.BytesFromMemoryAmount(resourceEstimation[parent_model.ResourceMemory]))
+	assert.Equal(t, 12000, int(model.CoresFromCPUAmount(resourceEstimation[model.ResourceCPU])))
+
+	acs.LastCtrMemoryLocalMaxima = &model.ContainerUsageSample{
+		timestamp, model.MemoryAmountFromBytes(3.14e9), testRequest[model.ResourceMemory], model.ResourceMemory}
+
+	resourceEstimation, _ = scaledEstimator.GetResourceEstimation(acs)
+	assert.Equal(t, 3.14e8, model.BytesFromMemoryAmount(resourceEstimation[model.ResourceMemory]))
 }
 
 // TODO BSK : cover tests for threshold estimators too
