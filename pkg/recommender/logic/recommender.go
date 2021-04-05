@@ -18,9 +18,8 @@ package logic
 
 import (
 	"flag"
-	model "vpa-recommender/pkg/recommender/model"
 
-	// "vpa-recommender/pkg/recommender/model"
+	model "github.com/gardener/vpa-recommender/pkg/recommender/model"
 
 	"k8s.io/klog"
 )
@@ -33,7 +32,7 @@ var (
 
 // PodResourceRecommender computes resource recommendation for a Vpa object.
 type PodResourceRecommender interface {
-	GetRecommendedPodResources(containerNameToAggregateStateMap model.ContainerNameToAggregateStateMap) RecommendedPodResources
+	GetRecommendedPodResources(containerNameToAggregateStateMap model.ContainerNameToAggregateStateMap) (RecommendedPodResources, bool)
 }
 
 // RecommendedPodResources is a Map from container name to recommended resources.
@@ -56,10 +55,10 @@ type podResourceRecommender struct {
 	upperBoundEstimator ResourceEstimator
 }
 
-func (r *podResourceRecommender) GetRecommendedPodResources(containerNameToAggregateStateMap model.ContainerNameToAggregateStateMap) RecommendedPodResources {
+func (r *podResourceRecommender) GetRecommendedPodResources(containerNameToAggregateStateMap model.ContainerNameToAggregateStateMap) (RecommendedPodResources, bool) {
 	var recommendation = make(RecommendedPodResources)
 	if len(containerNameToAggregateStateMap) == 0 {
-		return recommendation
+		return recommendation, false
 	}
 
 	fraction := 1.0 / float64(len(containerNameToAggregateStateMap))
@@ -75,40 +74,49 @@ func (r *podResourceRecommender) GetRecommendedPodResources(containerNameToAggre
 	}
 
 	for containerName, aggregatedContainerState := range containerNameToAggregateStateMap {
-		recommendation[containerName] = recommender.estimateContainerResources(aggregatedContainerState)
+		estimatedContainerResources, containerUpdated := recommender.estimateContainerResources(aggregatedContainerState)
+		if containerUpdated {
+			recommendation[containerName] = estimatedContainerResources
+		}
 	}
-	return recommendation
+
+	if len(recommendation) == 0 {
+		return recommendation, false
+	}
+
+	return recommendation, true
 }
 
 // Takes AggregateContainerState and returns a container recommendation.
-func (r *podResourceRecommender) estimateContainerResources(s *model.AggregateContainerState) RecommendedContainerResources {
+func (r *podResourceRecommender) estimateContainerResources(s *model.AggregateContainerState) (RecommendedContainerResources, bool) {
+	// TODO BSK: Perculate the escape switch further
 	// Perculate the resource estimation scale recommendation value using boolean
 	estimateTargetEstimator, toScaleTarget := r.targetEstimator.GetResourceEstimation(s)
 	// cpu := estimateTargetEstimator.
 	// if false to scale, then just reset the value
 	if !toScaleTarget {
-		estimateTargetEstimator = model.Resources{} // No recommendation
+		// No recommendation
+		return RecommendedContainerResources{model.Resources{}, model.Resources{}, model.Resources{}}, false
 	}
 
-	estimateLowerBoundEstimator, toScaleLB := r.lowerBoundEstimator.GetResourceEstimation(s)
-	if !toScaleLB {
-		estimateLowerBoundEstimator = model.Resources{}
-	}
+	estimateLowerBoundEstimator, _ := r.lowerBoundEstimator.GetResourceEstimation(s)
+	// if !toScaleLB {
+	// 	estimateLowerBoundEstimator = model.Resources{}
+	// }
 
-	estimateUpperBoundEstimator, toScaleUB := r.upperBoundEstimator.GetResourceEstimation(s)
-	if !toScaleUB {
-		estimateUpperBoundEstimator = model.Resources{}
-	}
+	estimateUpperBoundEstimator, _ := r.upperBoundEstimator.GetResourceEstimation(s)
+	// if !toScaleUB {
+	// 	estimateUpperBoundEstimator = model.Resources{}
+	// }
 
 	return RecommendedContainerResources{
 		// FilterControlledResources(r.targetEstimator.GetResourceEstimation(s), s.GetControlledResources())
 		FilterControlledResources(estimateTargetEstimator, s.GetControlledResources()),
-		// add an if else to get the GetREsourceEstimation
 		// FilterControlledResources(r.lowerBoundEstimator.GetResourceEstimation(s), s.GetControlledResources()),
 		FilterControlledResources(estimateLowerBoundEstimator, s.GetControlledResources()),
 		// FilterControlledResources(r.upperBoundEstimator.GetResourceEstimation(s), s.GetControlledResources()),
 		FilterControlledResources(estimateUpperBoundEstimator, s.GetControlledResources()),
-	}
+	}, true
 }
 
 // FilterControlledResources returns estimations from 'estimation' only for resources present in 'controlledResources'.

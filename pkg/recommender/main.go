@@ -20,14 +20,17 @@ import (
 	"flag"
 	"time"
 
-	"vpa-recommender/pkg/recommender/model"
-	// "vpa-recommender/pkg/recommender/routines"
+	"github.com/gardener/vpa-recommender/pkg/recommender/model"
 
+	"github.com/gardener/vpa-recommender/pkg/recommender/input/history"
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/autoscaler/vertical-pod-autoscaler/common"
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input/history"
 
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/routines"
+	// "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input/history"
+
+	"github.com/gardener/vpa-recommender/pkg/recommender/routines"
+	// "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/routines"
+
 	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/metrics"
 	metrics_quality "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/metrics/quality"
 	metrics_recommender "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/metrics/recommender"
@@ -70,6 +73,7 @@ var (
 	scaleDownMonitorTimeWindow = flag.Duration("scale-down-monitor-time-window", 60*time.Minute, `How much past time from current time should be considered for getting local maxima values of resource usage for scaling down`)
 	thresholdScaleUp           = flag.Float64("threshold-scale-up", 0.75, "threshold value beyond which VPA scale up should kick in")
 	thresholdScaleDown         = flag.Float64("threshold-scale-down", 0.25, "threshold value below which VPA scale down should kick in")
+	updateVpaStatus            = flag.Bool("update-vpa-status", false, "If the VPA status should not be updated but kept as read only set to false else true")
 	//thresholdMonitorTimeWindow = flag.Duration("threshold-monitor-time-window", 30*time.Minute, `Time window to get local maxima of CPU and memory usage till the curren time`)
 	//kubeApiQps                 = flag.Float64("kube-api-qps", 5.0, `QPS limit when making requests to Kubernetes apiserver`)
 	//kubeApiBurst               = flag.Float64("kube-api-burst", 10.0, `QPS burst limit when making requests to Kubernetes apiserver`)
@@ -107,7 +111,8 @@ func main() {
 			*thresholdScaleDown,
 			*scaleDownSafetyMargin,
 			*scaleUpMultiple,
-			*thresholdNumCrashes))
+			*thresholdNumCrashes,
+			*updateVpaStatus))
 
 	healthCheck := metrics.NewHealthCheck(*metricsFetcherInterval*5, true)
 	metrics.Initialize(*address, healthCheck)
@@ -124,6 +129,8 @@ func main() {
 
 	if useCheckpoints {
 		recommender.GetClusterStateFeeder().InitFromCheckpoints()
+		// Check if you could do getClusterState on this feeder object and there by set the VPA checkpoints on it
+
 	} else {
 		config := history.PrometheusHistoryProviderConfig{
 			Address:                *prometheusAddress,

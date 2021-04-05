@@ -20,7 +20,7 @@ import (
 	"testing"
 	"time"
 
-	model "vpa-recommender/pkg/recommender/model"
+	model "github.com/gardener/vpa-recommender/pkg/recommender/model"
 
 	"github.com/stretchr/testify/assert"
 	// parent_model "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"

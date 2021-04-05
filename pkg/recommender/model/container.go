@@ -23,8 +23,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metrics_quality "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/metrics/quality"
 
-	// metrics_quality "vpa-recommender/pkg/utils/metrics/quality"
-
 	"k8s.io/klog"
 )
 

@@ -12,11 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM gcr.io/distroless/static:latest
-MAINTAINER Krzysztof Grygiel "kgrygiel@google.com"
+FROM golang:1.15.8 as builder
 
-ARG ARCH
-COPY recommender-$ARCH /recommender
+WORKDIR /workspace
+# Copy the Go Modules manifests
+COPY . .
+
+# Build
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GO111MODULE=on GOFLAGS=-mod=vendor go build -a -o recommender main.go
+
+FROM gcr.io/distroless/static:latest
+# MAINTAINER Krzysztof Grygiel "kgrygiel@google.com"
+
+# ARG ARCH
+# COPY recommender-$ARCH /recommender
+COPY --from=builder /workspace/recommender .
 
 ENTRYPOINT ["/recommender"]
-CMD ["--v=4", "--stderrthreshold=info", "--prometheus-address=http://prometheus.monitoring.svc"]
+CMD ["--v=4", "--stderrthreshold=info", "--prometheus-address=http://prometheus.monitoring.svc", "--dont-update-vpa-status=true"]

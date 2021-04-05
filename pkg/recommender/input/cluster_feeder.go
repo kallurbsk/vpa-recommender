@@ -22,22 +22,28 @@ import (
 	"fmt"
 	"time"
 
-	"vpa-recommender/pkg/recommender/model"
+	"github.com/gardener/vpa-recommender/pkg/recommender/input/history"
+	"github.com/gardener/vpa-recommender/pkg/recommender/input/metrics"
+	"github.com/gardener/vpa-recommender/pkg/recommender/input/oom"
+	"github.com/gardener/vpa-recommender/pkg/recommender/input/spec"
 
+	"github.com/gardener/vpa-recommender/pkg/recommender/model"
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/apimachinery/pkg/watch"
 	vpa_types "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
 	vpa_clientset "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/client/clientset/versioned"
 	vpa_api "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/client/clientset/versioned/typed/autoscaling.k8s.io/v1"
 	vpa_lister "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/client/listers/autoscaling.k8s.io/v1"
 	controllerfetcher "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input/controller_fetcher"
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input/history"
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input/metrics"
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input/oom"
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input/spec"
+
+	// "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input/history"
+	// "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input/metrics"
+	// "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input/oom"
+	// "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input/spec"
 
 	// "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
 	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/target"
@@ -53,7 +59,15 @@ import (
 	resourceclient "k8s.io/metrics/pkg/client/clientset/versioned/typed/metrics/v1beta1"
 )
 
-const defaultResyncPeriod time.Duration = 10 * time.Minute
+const (
+	evictionWatchRetryWait                     = 10 * time.Second
+	evictionWatchJitterFactor                  = 0.5
+	scaleCacheLoopPeriod         time.Duration = 7 * time.Second
+	scaleCacheEntryLifetime      time.Duration = time.Hour
+	scaleCacheEntryFreshnessTime time.Duration = 10 * time.Minute
+	scaleCacheEntryJitterFactor  float64       = 1.
+	defaultResyncPeriod          time.Duration = 10 * time.Minute
+)
 
 // ClusterStateFeeder can update state of ClusterState object.
 type ClusterStateFeeder interface {
@@ -112,7 +126,8 @@ func NewClusterStateFeeder(config *rest.Config, clusterState *model.ClusterState
 	kubeClient := kube_client.NewForConfigOrDie(config)
 	podLister, oomObserver := NewPodListerAndOOMObserver(kubeClient, namespace)
 	factory := informers.NewSharedInformerFactoryWithOptions(kubeClient, defaultResyncPeriod, informers.WithNamespace(namespace))
-	controllerFetcher := controllerfetcher.NewControllerFetcher(config, kubeClient, factory)
+	controllerFetcher := controllerfetcher.NewControllerFetcher(config, kubeClient, factory, scaleCacheEntryFreshnessTime, scaleCacheEntryLifetime, scaleCacheEntryJitterFactor)
+	controllerFetcher.Start(context.TODO(), scaleCacheLoopPeriod)
 	return ClusterStateFeederFactory{
 		PodLister:           podLister,
 		OOMObserver:         oomObserver,
@@ -139,13 +154,20 @@ func WatchEvictionEventsWithRetries(kubeClient kube_client.Interface, observer o
 			FieldSelector: "reason=Evicted",
 		}
 
-		for {
+		watchEvictionEventsOnce := func() {
 			watchInterface, err := kubeClient.CoreV1().Events(namespace).Watch(context.TODO(), options)
 			if err != nil {
 				klog.Errorf("Cannot initialize watching events. Reason %v", err)
-				continue
+				return
 			}
 			watchEvictionEvents(watchInterface.ResultChan(), observer)
+		}
+		for {
+			watchEvictionEventsOnce()
+			// Wait between attempts, retrying too often breaks API server.
+			waitTime := wait.Jitter(evictionWatchRetryWait, evictionWatchJitterFactor)
+			klog.V(1).Infof("An attempt to watch eviction events finished. Waiting %v before the next one.", waitTime)
+			time.Sleep(waitTime)
 		}
 	}()
 }
@@ -169,6 +191,13 @@ func watchEvictionEvents(evictedEventChan <-chan watch.Event, observer oom.Obser
 
 // Creates clients watching pods: PodLister (listing only not terminated pods).
 func newPodClients(kubeClient kube_client.Interface, resourceEventHandler cache.ResourceEventHandler, namespace string) v1lister.PodLister {
+	// We are interested in pods which are Running or Unknown (in case the pod is
+	// running but there are some transient errors we don't want to delete it from
+	// our model).
+	// We don't want to watch Pending pods because they didn't generate any usage
+	// yet.
+	// Succeeded and Failed failed pods don't generate any usage anymore but we
+	// don't necessarily want to immediately delete them.
 	selector := fields.ParseSelectorOrDie("status.phase!=" + string(apiv1.PodPending))
 	podListWatch := cache.NewListWatchFromClient(kubeClient.CoreV1().RESTClient(), "pods", namespace, selector)
 	indexer, controller := cache.NewIndexerInformer(
@@ -242,6 +271,9 @@ func (feeder *clusterStateFeeder) setVpaCheckpoint(checkpoint *vpa_types.Vertica
 
 	cs := model.NewAggregateContainerState()
 	err := cs.LoadFromCheckpoint(&checkpoint.Status)
+	if err != nil {
+		return fmt.Errorf("cannot load checkpoint for VPA %+v. Reason: %v", vpa.ID, err)
+	}
 	// BSK : Loading other custom VPA parameters from annotations
 	annotations := checkpoint.ObjectMeta.Annotations["vpaData"]
 	var vpaData map[string]interface{}
@@ -261,6 +293,7 @@ func (feeder *clusterStateFeeder) setVpaCheckpoint(checkpoint *vpa_types.Vertica
 	if err != nil {
 		return fmt.Errorf("cannot load checkpoint for VPA %+v. Reason: %v", vpa.ID, err)
 	}
+
 	vpa.ContainersInitialAggregateState[checkpoint.Spec.ContainerName] = cs
 	return nil
 }

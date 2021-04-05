@@ -46,8 +46,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	// model "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
-	// "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/util"
 )
 
 // ContainerNameToAggregateStateMap maps a container name to AggregateContainerState

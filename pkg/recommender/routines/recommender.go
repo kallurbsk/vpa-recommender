@@ -17,23 +17,32 @@ limitations under the License.
 package routines
 
 import (
-	"autoscaler/vertical-pod-autoscaler/pkg/recommender/logic"
-	"autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
+	//"autoscaler/vertical-pod-autoscaler/pkg/recommender/logic"
+	//"autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
 	"context"
 	"encoding/json"
 	"flag"
 	"time"
 
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
+
+	"github.com/gardener/vpa-recommender/pkg/recommender/checkpoint"
+	"github.com/gardener/vpa-recommender/pkg/recommender/model"
+	"k8s.io/apimachinery/pkg/types"
 	vpa_types "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
 	vpa_clientset "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/client/clientset/versioned"
 	vpa_api "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/client/clientset/versioned/typed/autoscaling.k8s.io/v1"
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/checkpoint"
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input"
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/logic"
-	vpa_routine "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/routines/vpa"
 
-	// "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
-	metrics_recommender "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/metrics/recommender"
+	// "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/checkpoint"
+
+	// "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input"
+
+	"github.com/gardener/vpa-recommender/pkg/recommender/input"
+	"github.com/gardener/vpa-recommender/pkg/recommender/logic"
+	metrics_recommender "github.com/gardener/vpa-recommender/pkg/utils/metrics/recommender"
+	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	// metrics_recommender "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/metrics/recommender"
 	vpa_utils "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/vpa"
 	"k8s.io/client-go/rest"
 	"k8s.io/klog"
@@ -86,6 +95,55 @@ func (r *recommender) GetClusterStateFeeder() input.ClusterStateFeeder {
 	return r.clusterStateFeeder
 }
 
+type patchRecord struct {
+	Op    string      `json:"op,inline"`
+	Path  string      `json:"path,inline"`
+	Value interface{} `json:"value"`
+}
+
+func patchVpa(vpaClient vpa_api.VerticalPodAutoscalerInterface, vpaName string, patches []patchRecord) (result *vpa_types.VerticalPodAutoscaler, err error) {
+	bytes, err := json.Marshal(patches)
+	if err != nil {
+		klog.Errorf("Cannot marshal VPA status patches %+v. Reason: %+v", patches, err)
+		return
+	}
+
+	return vpaClient.Patch(context.TODO(), vpaName, types.JSONPatchType, bytes, meta.PatchOptions{})
+}
+
+// UpdateVpaIfNeeded updates the status field of the VPA API object.
+// It prevents race conditions by verifying that the lastUpdateTime of the
+// API object and its model representation are equal.
+func UpdateVpaIfNeeded(vpaClient vpa_api.VerticalPodAutoscalerInterface, vpaName string, newStatus,
+	oldStatus *vpa_types.VerticalPodAutoscalerStatus, updateStatus bool) (result *vpa_types.VerticalPodAutoscaler, err error) {
+	if apiequality.Semantic.DeepEqual(*oldStatus, *newStatus) {
+		// return patchVpa(vpaClient, vpaName, patches)
+		return nil, nil
+	}
+
+	newVPAStatusData, err := json.Marshal(newStatus)
+	if err != nil {
+		klog.Errorf(
+			"JSON Marshalling error for VPA object %v. Reason: %+v", vpaName, err)
+	}
+
+	patches := []patchRecord{{
+		Op:    "add",
+		Path:  "/metadata/annotations/vpa-recommender.gardener.cloud/status",
+		Value: string(newVPAStatusData),
+	}}
+
+	if updateStatus {
+		patches = append(patches, patchRecord{
+			Op:    "add",
+			Path:  "/status",
+			Value: *newStatus,
+		})
+	}
+
+	return patchVpa(vpaClient, vpaName, patches)
+}
+
 // Updates VPA CRD objects' statuses.
 func (r *recommender) UpdateVPAs() {
 	cnt := metrics_recommender.NewObjectCounter()
@@ -101,7 +159,13 @@ func (r *recommender) UpdateVPAs() {
 		if !found {
 			continue
 		}
-		resources := r.podResourceRecommender.GetRecommendedPodResources(vpa_routine.GetContainerNameToAggregateStateMap(vpa))
+
+		resources, isRecommendation := r.podResourceRecommender.GetRecommendedPodResources(GetContainerNameToAggregateStateMap(vpa))
+		// If there is no new recommendation obtained from GetRecommendedPodResources then it is good to continue
+		if !isRecommendation {
+			continue
+		}
+
 		had := vpa.HasRecommendation()
 		vpa.UpdateRecommendation(getCappedRecommendation(vpa.ID, resources, observedVpa.Spec.ResourcePolicy))
 
@@ -124,28 +188,12 @@ func (r *recommender) UpdateVPAs() {
 		}
 		cnt.Add(vpa)
 
-		// TODO BSK : catch the object instead of _ This is the VPA object. Add annotations to it.
-		// _, err := vpa_utils.UpdateVpaStatusIfNeeded(
-		// 	r.vpaClient.VerticalPodAutoscalers(vpa.ID.Namespace), vpa.ID.VpaName, vpa.AsStatus(), &observedVpa.Status)
-
-		newVPAStatus := vpa.AsStatus()
-		verticalPodAutoscaler, err := vpa_utils.UpdateVpaStatusIfNeeded(
-			r.vpaClient.VerticalPodAutoscalers(vpa.ID.Namespace), vpa.ID.VpaName, newVPAStatus, &observedVpa.Status)
+		_, err := UpdateVpaIfNeeded(
+			r.vpaClient.VerticalPodAutoscalers(vpa.ID.Namespace), vpa.ID.VpaName, vpa.AsStatus(), &observedVpa.Status, model.UpdateVpaStatus)
 		if err != nil {
 			klog.Errorf(
 				"Cannot update VPA %v object. Reason: %+v", vpa.ID.VpaName, err)
 		}
-		newVPAStatusData, err := json.Marshal(newVPAStatus)
-		if err != nil {
-			klog.Errorf(
-				"JSON Marshalling error for VPA object %v. Reason: %+v", vpa.ID.VpaName, err)
-		}
-
-		vpaStatusAnnotate := make(map[string]string)
-		vpaStatusAnnotate["vpa-recommender.gardener.cloud/status"] = string(newVPAStatusData)
-
-		verticalPodAutoscaler.ObjectMeta.Annotations = vpaStatusAnnotate
-
 	}
 }
 
