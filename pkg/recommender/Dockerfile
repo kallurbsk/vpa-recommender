@@ -22,7 +22,7 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GO111MODULE=on GOFLAGS=-mod=vendor go build -a -o recommender main.go
 
 FROM gcr.io/distroless/static:latest
-# MAINTAINER Krzysztof Grygiel "kgrygiel@google.com"
+# # MAINTAINER Krzysztof Grygiel "kgrygiel@google.com"
 
 # ARG ARCH
 # COPY recommender-$ARCH /recommender

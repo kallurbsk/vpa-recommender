@@ -30,7 +30,8 @@ import (
 )
 
 const (
-	metricsNamespace = metrics.TopMetricsNamespace + "recommender"
+	// metricsNamespace = metrics.TopMetricsNamespace + "recommender"
+	metricsNamespace = "gardener_vpa_recommender"
 )
 
 var (

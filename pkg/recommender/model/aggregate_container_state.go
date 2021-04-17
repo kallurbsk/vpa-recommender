@@ -36,7 +36,6 @@ limitations under the License.
 package model
 
 import (
-	// "autoscaler/vertical-pod-autoscaler/pkg/recommender/util"
 	"fmt"
 	"math"
 	"time"
@@ -107,30 +106,26 @@ type AggregateContainerState struct {
 	// we want to know if it needs recommendation, if the recommendation
 	// is present and if the automatic updates are on (are we able to
 	// apply the recommendation to the pods).
-	LastRecommendation  corev1.ResourceList
-	IsUnderVPA          bool
-	UpdateMode          *vpa_types.UpdateMode
-	ScalingMode         *vpa_types.ContainerScalingMode
-	ControlledResources *[]ResourceName
-
-	// BSK: adding new VPA recommender specific parameters
-
-	LastCtrCPULocalMaxima       *ContainerUsageSample
-	LastCtrMemoryLocalMaxima    *ContainerUsageSample
-	CurrentCtrCPUUsage          *ContainerUsageSample
-	CurrentCtrMemUsage          *ContainerUsageSample
-	LastLocalMaximaRecordedTime time.Time
-	TimeWindowForLocalMaxima    time.Duration
-	RestartCountSinceLastOOM    int64
-	TotalCPUSamplesCount        int
-	TotalMemorySamplesCount     int
-
-	// TODO BSK: See if you can move this elsewhere as most of these are static
-	ThresholdScaleDown    float64
-	ThresholdScaleUp      float64
-	ScaleDownSafetyMargin float64
-	ScaleUpValue          float64
-	ThresholdNumCrashes   int
+	LastRecommendation             corev1.ResourceList
+	IsUnderVPA                     bool
+	UpdateMode                     *vpa_types.UpdateMode
+	ScalingMode                    *vpa_types.ContainerScalingMode
+	ControlledResources            *[]ResourceName
+	LastCtrCPULocalMaxima          *ContainerUsageSample
+	LastCtrMemoryLocalMaxima       *ContainerUsageSample
+	CurrentCtrCPUUsage             *ContainerUsageSample
+	CurrentCtrMemUsage             *ContainerUsageSample
+	LastCPULocalMaximaRecordedTime time.Time
+	LastMemLocalMaximaRecordedTime time.Time
+	TimeWindowForLocalMaxima       time.Duration
+	RestartCountSinceLastOOM       int64
+	TotalCPUSamplesCount           int
+	TotalMemorySamplesCount        int
+	ThresholdScaleDown             float64
+	ThresholdScaleUp               float64
+	ScaleDownSafetyMargin          float64
+	ScaleUpValue                   float64
+	ThresholdNumCrashes            int
 }
 
 // GetLastRecommendation returns last recorded recommendation.
@@ -176,6 +171,7 @@ func (a *AggregateContainerState) MarkNotAutoscaled() {
 
 // MergeContainerState merges two AggregateContainerStates.
 func (a *AggregateContainerState) MergeContainerState(other *AggregateContainerState) {
+
 	a.AggregateCPUUsage.Merge(other.AggregateCPUUsage)
 	a.AggregateMemoryPeaks.Merge(other.AggregateMemoryPeaks)
 
@@ -187,6 +183,24 @@ func (a *AggregateContainerState) MergeContainerState(other *AggregateContainerS
 		a.LastSampleStart = other.LastSampleStart
 	}
 	a.TotalSamplesCount += other.TotalSamplesCount
+
+	if a.LastCtrCPULocalMaxima.Usage < other.LastCtrCPULocalMaxima.Usage {
+		a.LastCtrCPULocalMaxima = other.LastCtrCPULocalMaxima
+	}
+
+	if a.LastCtrMemoryLocalMaxima.Usage < other.LastCtrMemoryLocalMaxima.Usage {
+		a.LastCtrMemoryLocalMaxima = other.LastCtrMemoryLocalMaxima
+	}
+
+	if a.CurrentCtrCPUUsage.MeasureStart.IsZero() ||
+		(!other.CurrentCtrCPUUsage.MeasureStart.IsZero() && other.CurrentCtrCPUUsage.MeasureStart.After(a.CurrentCtrCPUUsage.MeasureStart)) {
+		a.CurrentCtrCPUUsage = other.CurrentCtrCPUUsage
+	}
+
+	if a.CurrentCtrMemUsage.MeasureStart.IsZero() ||
+		(!other.CurrentCtrMemUsage.MeasureStart.IsZero() && other.CurrentCtrMemUsage.MeasureStart.After(a.CurrentCtrMemUsage.MeasureStart)) {
+		a.CurrentCtrMemUsage = other.CurrentCtrMemUsage
+	}
 }
 
 // NewAggregateContainerState returns a new, empty AggregateContainerState.
@@ -194,53 +208,46 @@ func NewAggregateContainerState() *AggregateContainerState {
 	config := GetAggregationsConfig()
 
 	lastCtrCPULocalMaxima := &ContainerUsageSample{
-		MeasureStart: time.Now(),
-		Request:      0,
-		Usage:        0,
-		Resource:     ResourceCPU,
+		Request:  0,
+		Usage:    0,
+		Resource: ResourceCPU,
 	}
 
 	lastCtrMemLocalMaxima := &ContainerUsageSample{
-		MeasureStart: time.Now(),
-		Request:      0,
-		Usage:        0,
-		Resource:     ResourceMemory,
+		Request:  0,
+		Usage:    0,
+		Resource: ResourceMemory,
 	}
 
 	currentCtrCPUUsage := &ContainerUsageSample{
-		MeasureStart: time.Now(),
-		Request:      0,
-		Usage:        0,
-		Resource:     ResourceCPU,
+		Request:  0,
+		Usage:    0,
+		Resource: ResourceCPU,
 	}
 
 	currentCtrMemUsage := &ContainerUsageSample{
-		MeasureStart: time.Now(),
-		Request:      0,
-		Usage:        0,
-		Resource:     ResourceMemory,
+		Request:  0,
+		Usage:    0,
+		Resource: ResourceMemory,
 	}
 
 	return &AggregateContainerState{
-		AggregateCPUUsage:    util.NewDecayingHistogram(config.CPUHistogramOptions, config.CPUHistogramDecayHalfLife),
-		AggregateMemoryPeaks: util.NewDecayingHistogram(config.MemoryHistogramOptions, config.MemoryHistogramDecayHalfLife),
-		CreationTime:         time.Now(),
-		// TODO BSK: New parameter to get the time windwo for finding Local Maxima
-		TimeWindowForLocalMaxima:    config.ThresholdMonitorTimeWindow,
-		ThresholdScaleDown:          config.ThresholdScaleDown,
-		ThresholdScaleUp:            config.ThresholdScaleUp,
-		ScaleDownSafetyMargin:       config.ScaleDownSafetyMargin,
-		ScaleUpValue:                config.ScaleUpValue,
-		ThresholdNumCrashes:         config.ThresholdNumCrashes,
-		CurrentCtrCPUUsage:          currentCtrCPUUsage,
-		CurrentCtrMemUsage:          currentCtrMemUsage,
-		LastCtrCPULocalMaxima:       lastCtrCPULocalMaxima,
-		LastCtrMemoryLocalMaxima:    lastCtrMemLocalMaxima,
-		LastLocalMaximaRecordedTime: time.Now(),
-		RestartCountSinceLastOOM:    0,
-		TotalCPUSamplesCount:        0,
-		TotalMemorySamplesCount:     0,
-		// TODO BSK: Recheck if this is the right initialization for CPU and memory
+		AggregateCPUUsage:        util.NewDecayingHistogram(config.CPUHistogramOptions, config.CPUHistogramDecayHalfLife),
+		AggregateMemoryPeaks:     util.NewDecayingHistogram(config.MemoryHistogramOptions, config.MemoryHistogramDecayHalfLife),
+		CreationTime:             time.Now(),
+		TimeWindowForLocalMaxima: config.ThresholdMonitorTimeWindow,
+		ThresholdScaleDown:       config.ThresholdScaleDown,
+		ThresholdScaleUp:         config.ThresholdScaleUp,
+		ScaleDownSafetyMargin:    config.ScaleDownSafetyMargin,
+		ScaleUpValue:             config.ScaleUpValue,
+		ThresholdNumCrashes:      config.ThresholdNumCrashes,
+		CurrentCtrCPUUsage:       currentCtrCPUUsage,
+		CurrentCtrMemUsage:       currentCtrMemUsage,
+		LastCtrCPULocalMaxima:    lastCtrCPULocalMaxima,
+		LastCtrMemoryLocalMaxima: lastCtrMemLocalMaxima,
+		RestartCountSinceLastOOM: 0,
+		TotalCPUSamplesCount:     0,
+		TotalMemorySamplesCount:  0,
 	}
 }
 
@@ -257,14 +264,13 @@ func (a *AggregateContainerState) AddSample(sample *ContainerUsageSample) {
 	switch sample.Resource {
 	case ResourceCPU:
 		a.addCPUSample(sample)
-		// BSK : NEW VPA
-		a.addCPULocalMaxima(sample)
 		a.SetCPUUsage(sample)
+		a.addCPULocalMaxima(sample)
 	case ResourceMemory:
 		a.AggregateMemoryPeaks.AddSample(BytesFromMemoryAmount(sample.Usage), 1.0, sample.MeasureStart)
-		// BSK : NEW VPA
-		a.addMemoryLocalMaxima(sample)
 		a.SetMemUsage(sample)
+		a.addMemoryLocalMaxima(sample)
+		a.TotalMemorySamplesCount++
 	default:
 		panic(fmt.Sprintf("AddSample doesn't support resource '%s'", sample.Resource))
 	}
@@ -303,44 +309,50 @@ func (a *AggregateContainerState) addCPUSample(sample *ContainerUsageSample) {
 
 // addCPULocalMaxima is the local maxima value for getting the CPU usage local maxima in threshold time window
 func (a *AggregateContainerState) addCPULocalMaxima(sample *ContainerUsageSample) {
-	// TODO BSK:
-	/*
-		Instead of storing all samples, we will pick what is the max of samples from a specified set of time window
-		We can get this timeWindow from the parameter list again to make it configurable.
-		Instead of calling AddSample below, we will have a custom definition say AddLocalMaxima which will
-		compare if the current usage is more than the lastLocalMaxima parameter within the given time window.
-		Only then we will update lastLocalMaxima
-	*/
+
 	cpuUsageCores := CoresFromCPUAmount(sample.Usage)
-	// cpuRequestCores := model.CoresFromCPUAmount(sample.Request)
+	cpuRequestCores := CoresFromCPUAmount(sample.Request)
 
 	// thresholdMonitorTimeWindow = 30 * time.Minute by default
-	diffDuration := time.Now().Sub(a.LastLocalMaximaRecordedTime)
-
+	diffDuration := time.Now().Sub(a.LastCPULocalMaximaRecordedTime)
+	// reset CPU Local Maxima Request and Usage
 	if diffDuration > a.TimeWindowForLocalMaxima {
 		a.LastCtrCPULocalMaxima.Usage = 0
 		a.LastCtrCPULocalMaxima.Request = 0
+		a.LastCtrCPULocalMaxima.MeasureStart = time.Time{}
+		a.LastCtrCPULocalMaxima.Resource = sample.Resource
+
 	}
 	// assign LastCtrCPULocalMaxima if only it is less than current CPU usage
-	if float64(a.LastCtrCPULocalMaxima.Usage) < cpuUsageCores {
+	if float64(a.LastCtrCPULocalMaxima.Usage) < cpuUsageCores && diffDuration < a.TimeWindowForLocalMaxima {
 		a.LastCtrCPULocalMaxima.Usage = CPUAmountFromCores(cpuUsageCores)
+		a.LastCtrCPULocalMaxima.Request = CPUAmountFromCores(cpuRequestCores)
+		a.LastCtrCPULocalMaxima.MeasureStart = sample.MeasureStart
+		a.LastCtrCPULocalMaxima.Resource = sample.Resource
+		a.LastCPULocalMaximaRecordedTime = time.Now()
 	}
 }
 
 // addMemoryLocalMaxima is the local maxima value for getting the CPU usage local maxima in threshold time window
 func (a *AggregateContainerState) addMemoryLocalMaxima(sample *ContainerUsageSample) {
 	memoryUsage := BytesFromMemoryAmount(sample.Usage)
+	memoryRequest := BytesFromMemoryAmount(sample.Request)
 
 	// thresholdMonitorTimeWindow = 30 * time.Minute by default
-	diffDuration := time.Now().Sub(a.LastLocalMaximaRecordedTime)
-
+	diffDuration := time.Now().Sub(a.LastMemLocalMaximaRecordedTime)
 	if diffDuration > a.TimeWindowForLocalMaxima {
 		a.LastCtrMemoryLocalMaxima.Usage = 0
 		a.LastCtrMemoryLocalMaxima.Request = 0
+		a.LastCtrMemoryLocalMaxima.MeasureStart = time.Time{}
+		a.LastCtrMemoryLocalMaxima.Resource = sample.Resource
 	}
 	// assign LastCtrCPULocalMaxima if only it is less than current CPU usage
-	if float64(a.LastCtrMemoryLocalMaxima.Usage) < memoryUsage {
+	if float64(a.LastCtrMemoryLocalMaxima.Usage) < memoryUsage && diffDuration < a.TimeWindowForLocalMaxima {
 		a.LastCtrMemoryLocalMaxima.Usage = MemoryAmountFromBytes(memoryUsage)
+		a.LastCtrMemoryLocalMaxima.Request = MemoryAmountFromBytes(memoryRequest)
+		a.LastCtrMemoryLocalMaxima.MeasureStart = sample.MeasureStart
+		a.LastCtrMemoryLocalMaxima.Resource = sample.Resource
+		a.LastMemLocalMaximaRecordedTime = time.Now()
 	}
 }
 
@@ -362,14 +374,6 @@ func (a *AggregateContainerState) SaveToCheckpoint() (*vpa_types.VerticalPodAuto
 		MemoryHistogram:   *memory,
 		CPUHistogram:      *cpu,
 		Version:           SupportedCheckpointVersion,
-		// TODO BSK: other details from new recommender
-		// These values will be saved as a part of annotations to VPACheckpoint object
-		// LocalMaximaCPU:              float64(a.LastCtrCPULocalMaxima.Usage),
-		// LocalMaximaMemory:           float64(a.LastCtrMemoryLocalMaxima.Usage),
-		// LastLocalMaximaRecordedTime: a.LastLocalMaximaRecordedTime,
-		// TotalCPUSamplesCount:        a.TotalCPUSamplesCount,
-		// CurrentCtrCPUUsage:          a.CurrentCtrCPUUsage,
-		// CurrentCtrMemUsage:          a.CurrentCtrMemUsage,
 	}, nil
 }
 
@@ -390,15 +394,6 @@ func (a *AggregateContainerState) LoadFromCheckpoint(checkpoint *vpa_types.Verti
 	if err != nil {
 		return err
 	}
-
-	// These will be loaded as a part of annotations to the object of VPACheckpoint
-	// a.LastCtrCPULocalMaxima.Usage = ResourceAmount(checkpoint.LocalMaximaCPU)
-	// a.LastCtrMemoryLocalMaxima.Usage = ResourceAmount(checkpoint.LocalMaximaMemory)
-	// a.LastLocalMaximaRecordedTime = checkpoint.LastLocalMaximaRecordedTime
-
-	// // loading last recorded "current" container cpu and memory
-	// a.CurrentCtrCPUUsage = checkpoint.CurrentCtrCPUUsage
-	// a.CurrentCtrMemUsage = checkpoint.CurrentCtrMemUsage
 	return nil
 }
 

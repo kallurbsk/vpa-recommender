@@ -18,23 +18,20 @@ package main
 
 import (
 	"flag"
+	"os"
 	"time"
 
 	"github.com/gardener/vpa-recommender/pkg/recommender/model"
 
 	"github.com/gardener/vpa-recommender/pkg/recommender/input/history"
+	"github.com/gardener/vpa-recommender/pkg/recommender/routines"
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/autoscaler/vertical-pod-autoscaler/common"
-
-	// "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input/history"
-
-	"github.com/gardener/vpa-recommender/pkg/recommender/routines"
-	// "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/routines"
-
 	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/metrics"
 	metrics_quality "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/metrics/quality"
 	metrics_recommender "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/metrics/recommender"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
 	kube_flag "k8s.io/component-base/cli/flag"
 	"k8s.io/klog"
 )
@@ -47,8 +44,7 @@ var (
 	address                = flag.String("address", ":8942", "The address to expose Prometheus metrics.")
 	kubeApiQps             = flag.Float64("kube-api-qps", 5.0, `QPS limit when making requests to Kubernetes apiserver`)
 	kubeApiBurst           = flag.Float64("kube-api-burst", 10.0, `QPS burst limit when making requests to Kubernetes apiserver`)
-
-	storage = flag.String("storage", "", `Specifies storage mode. Supported values: prometheus, checkpoint (default)`)
+	storage                = flag.String("storage", "", `Specifies storage mode. Supported values: prometheus, checkpoint (default)`)
 	// prometheus history provider configs
 	historyLength       = flag.String("history-length", "8d", `How much time back prometheus have to be queried to get historical metrics`)
 	historyResolution   = flag.String("history-resolution", "1h", `Resolution at which Prometheus is queried for historical metrics`)
@@ -63,9 +59,6 @@ var (
 	vpaObjectNamespace  = flag.String("vpa-object-namespace", apiv1.NamespaceAll, "Namespace to search for VPA objects and pod stats. Empty means all namespaces will be used.")
 
 	// new VPA
-	// TODO BSK: Remove unused variables in the new recommender
-	// Update the below 6 flags in the VerticalPodAutoscalerCheckpointStatus in vertical-pod-autoscaler/e2e/vendor/k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1/types.go so that they can be fetched later.
-	//metricsFetcherInterval     = flag.Duration("recommender-interval", 1*time.Minute, `How often metrics should be fetched`)
 	lastCrashCountTime         = flag.Float64("last-crash-count-time", 0, `Time at which last pod crash happened`)
 	thesholdNoCrashes          = flag.Int64("threshold-crash-number", 3, `Number of pod crashes to withstand before scaling up both CPU and memory resources irrespective of usage`)
 	timeSinceLastCrash         = flag.Duration("time-since-last-crash", 0, `Difference between current system time and last crash recorded time`)
@@ -74,12 +67,7 @@ var (
 	thresholdScaleUp           = flag.Float64("threshold-scale-up", 0.75, "threshold value beyond which VPA scale up should kick in")
 	thresholdScaleDown         = flag.Float64("threshold-scale-down", 0.25, "threshold value below which VPA scale down should kick in")
 	updateVpaStatus            = flag.Bool("update-vpa-status", false, "If the VPA status should not be updated but kept as read only set to false else true")
-	//thresholdMonitorTimeWindow = flag.Duration("threshold-monitor-time-window", 30*time.Minute, `Time window to get local maxima of CPU and memory usage till the curren time`)
-	//kubeApiQps                 = flag.Float64("kube-api-qps", 5.0, `QPS limit when making requests to Kubernetes apiserver`)
-	//kubeApiBurst               = flag.Float64("kube-api-burst", 10.0, `QPS burst limit when making requests to Kubernetes apiserver`)
-	//checkpointsGCInterval      = flag.Duration("checkpoints-gc-interval", 10*time.Minute, `How often orphaned checkpoints should be garbage collected`)
-	//kubeApiQps                 = flag.Float64("kube-api-qps", 5.0, `QPS limit when making requests to Kubernetes apiserver`)
-	//kubeApiBurst               = flag.Float64("kube-api-burst", 10.0, `QPS burst limit when making requests to Kubernetes apiserver`)
+	allowOutsideClient         = flag.Bool("allow-outside-client", false, "Allowing the cluster access to run recommender from outside the cluster")
 )
 
 // Aggregation configuration flags
@@ -156,18 +144,38 @@ func main() {
 
 	ticker := time.Tick(*metricsFetcherInterval)
 	for range ticker {
-		// TODO BSK: also add the update to get the details every minute here
 		recommender.RunOnce()
 		healthCheck.UpdateLastActivity()
 	}
 }
 
 func createKubeConfig(kubeApiQps float32, kubeApiBurst int) *rest.Config {
-	config, err := rest.InClusterConfig()
+
+	// From inside client
+	if !*allowOutsideClient {
+		config, err := rest.InClusterConfig()
+		if err != nil {
+			klog.Fatalf("Failed to create config: %v", err)
+		}
+		config.QPS = kubeApiQps
+		config.Burst = kubeApiBurst
+
+		return config
+	}
+
+	// From outside client.
+	kubeconfigPath := os.Getenv("KUBECONFIG")
+	if len(kubeconfigPath) == 0 {
+		klog.Fatalf("Failed to get KUBECONFIG os environment variable")
+		return nil
+	}
+	config, err := clientcmd.BuildConfigFromFlags("", *&kubeconfigPath)
 	if err != nil {
 		klog.Fatalf("Failed to create config: %v", err)
 	}
+
 	config.QPS = kubeApiQps
 	config.Burst = kubeApiBurst
+
 	return config
 }

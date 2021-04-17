@@ -52,7 +52,6 @@ type AggregationsConfig struct {
 	// CPU usage sample to lose half of its weight.
 	CPUHistogramDecayHalfLife time.Duration
 
-	// BSK: Parameter for defining threshold value for time window
 	ThresholdMonitorTimeWindow time.Duration
 	ThresholdScaleDown         float64
 	ThresholdScaleUp           float64
@@ -94,7 +93,7 @@ const (
 	// DefaultThresholdNumCrashes is the default total number of crashes to withstand before doubling both CPU and memory irrespective of usage
 	DefaultThresholdNumCrashes = 3
 	// UpdateVpaStatus is set to false by default. This enables read only mode for the VPA recommender and prevents updating details in status
-	UpdateVpaStatus = false
+	DefaultUpdateVpaStatus = false
 )
 
 // GetMemoryAggregationWindowLength returns the total length of the memory usage history aggregated by VPA.
@@ -138,6 +137,7 @@ func NewAggregationsConfig(memoryAggregationInterval time.Duration,
 	scaleUpValue float64,
 	thresholdNumCrashes int,
 	updateVpaStatus bool) *AggregationsConfig {
+
 	a := &AggregationsConfig{
 		MemoryAggregationInterval:      memoryAggregationInterval,
 		MemoryAggregationIntervalCount: memoryAggregationIntervalCount,
@@ -162,8 +162,7 @@ var aggregationsConfig *AggregationsConfig
 // GetAggregationsConfig gets the aggregations config. Initializes to default values if not initialized already.
 func GetAggregationsConfig() *AggregationsConfig {
 	if aggregationsConfig == nil {
-		//aggregationsConfig = NewAggregationsConfig(DefaultMemoryAggregationInterval, DefaultMemoryAggregationIntervalCount, DefaultMemoryHistogramDecayHalfLife, DefaultCPUHistogramDecayHalfLife)
-		aggregationsConfig = NewAggregationsConfig(DefaultMemoryAggregationInterval, DefaultMemoryAggregationIntervalCount, DefaultMemoryHistogramDecayHalfLife, DefaultCPUHistogramDecayHalfLife, DefaultThresholdMonitorTimeWindow, DefaultThresholdScaleUp, DefaultThresholdScaleDown, DefaultScaleDownSafetyMargin, DefaultScaleUpMultiple, DefaultThresholdNumCrashes, UpdateVpaStatus)
+		aggregationsConfig = NewAggregationsConfig(DefaultMemoryAggregationInterval, DefaultMemoryAggregationIntervalCount, DefaultMemoryHistogramDecayHalfLife, DefaultCPUHistogramDecayHalfLife, DefaultThresholdMonitorTimeWindow, DefaultThresholdScaleUp, DefaultThresholdScaleDown, DefaultScaleDownSafetyMargin, DefaultScaleUpMultiple, DefaultThresholdNumCrashes, DefaultUpdateVpaStatus)
 	}
 
 	return aggregationsConfig

@@ -17,13 +17,10 @@ limitations under the License.
 package logic
 
 import (
-	"log"
 	"math"
 	"time"
 
 	model "github.com/gardener/vpa-recommender/pkg/recommender/model"
-
-	"k8s.io/klog"
 )
 
 // TODO: Split the estimator to have a separate estimator object for CPU and memory.
@@ -217,6 +214,7 @@ func getScaleValue(s *model.AggregateContainerState) (float64, float64) {
 	// CPU
 	currentCPURequestLowerThreshold := float64(currentCPUUsage.Request) * s.ThresholdScaleDown
 	currentCPURequestUpperThreshold := float64(currentCPUUsage.Request) * s.ThresholdScaleUp
+
 	if currentCPURequestLowerThreshold < float64(currentCPUUsage.Usage) && float64(currentCPUUsage.Usage) < currentCPURequestUpperThreshold {
 		cpuScaleValue = 1.0
 	} else if float64(currentCPUUsage.Usage) > currentCPURequestUpperThreshold { // Scale Up
@@ -228,6 +226,7 @@ func getScaleValue(s *model.AggregateContainerState) (float64, float64) {
 	// Memory
 	currentMemRequestLowerThreshold := float64(currentMemUsage.Request) * s.ThresholdScaleDown
 	currentMemRequestUpperThreshold := float64(currentMemUsage.Request) * s.ThresholdScaleUp
+
 	if currentMemRequestLowerThreshold < float64(currentMemUsage.Usage) && float64(currentMemUsage.Usage) < currentMemRequestUpperThreshold {
 		memScaleValue = 1.0
 	} else if float64(currentMemUsage.Usage) > currentMemRequestUpperThreshold { // Scale Up
@@ -256,39 +255,32 @@ func (e *scaledResourceEstimator) GetResourceEstimation(s *model.AggregateContai
 	cpuUsage := s.CurrentCtrCPUUsage
 	memUsage := s.CurrentCtrMemUsage
 	originalResources := model.Resources{
-		model.ResourceCPU:    model.CPUAmountFromCores(float64(cpuUsage.Usage)),
-		model.ResourceMemory: model.MemoryAmountFromBytes(float64(memUsage.Usage)),
+		model.ResourceCPU:    cpuUsage.Usage,
+		model.ResourceMemory: memUsage.Usage,
 	}
+
 	scaledResources := make(model.Resources)
 	cpuScale, memScale := getScaleValue(s)
-	log.Printf("BSK estimator cpuScale, memScale = %f, %f", cpuScale, memScale)
-	// Skip the scale value if it is 1.0 to keep track of idempotency.
-	// It also avoids reconciliation. GetResourceEstimation should also return bool along with parent_model.Resources
-	// if cpuScale == 1.0 {
-	// 	return originalResources, false
-	// }
 
-	// if memScale == 1.0 {
-	// 	return originalResources, false
-	// }
+	// skip scaling if both CPU and memory scale values are 1.0
+	if cpuScale == 1.0 && memScale == 1.0 {
+		return originalResources, false
+	}
 
 	for resource, resourceAmount := range originalResources {
-		log.Printf("resource = %v, resourceAmount = %v", resource, resourceAmount)
+
 		scaleValue := 0.0
 		if resource == "cpu" {
 			scaleValue = cpuScale
-			if cpuScale == 1.0 {
-				return originalResources, false
-			}
 		} else if resource == "memory" {
 			scaleValue = memScale
-			if memScale == 1.0 {
-				return originalResources, false
-			}
 		}
-		scaledResources[resource] = model.ScaleResource(resourceAmount, scaleValue)
+		scaledResources[resource] = originalResources[resource]
+
+		if scaleValue > float64(1.0) {
+			scaledResources[resource] = model.ScaleResource(resourceAmount, scaleValue)
+		}
 	}
-	klog.V(1).Infof("BSK scaledResources = %+v", scaledResources)
 	return scaledResources, true
 }
 

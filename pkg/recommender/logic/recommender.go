@@ -20,8 +20,6 @@ import (
 	"flag"
 
 	model "github.com/gardener/vpa-recommender/pkg/recommender/model"
-
-	"k8s.io/klog"
 )
 
 var (
@@ -89,32 +87,27 @@ func (r *podResourceRecommender) GetRecommendedPodResources(containerNameToAggre
 
 // Takes AggregateContainerState and returns a container recommendation.
 func (r *podResourceRecommender) estimateContainerResources(s *model.AggregateContainerState) (RecommendedContainerResources, bool) {
-	// TODO BSK: Perculate the escape switch further
 	// Perculate the resource estimation scale recommendation value using boolean
 	estimateTargetEstimator, toScaleTarget := r.targetEstimator.GetResourceEstimation(s)
-	// cpu := estimateTargetEstimator.
 	// if false to scale, then just reset the value
 	if !toScaleTarget {
 		// No recommendation
 		return RecommendedContainerResources{model.Resources{}, model.Resources{}, model.Resources{}}, false
 	}
 
-	estimateLowerBoundEstimator, _ := r.lowerBoundEstimator.GetResourceEstimation(s)
-	// if !toScaleLB {
-	// 	estimateLowerBoundEstimator = model.Resources{}
-	// }
+	estimateLowerBoundEstimator := model.Resources{
+		model.ResourceCPU:    model.ScaleResource(estimateTargetEstimator[model.ResourceCPU], 0.5),
+		model.ResourceMemory: model.ScaleResource(estimateTargetEstimator[model.ResourceMemory], 0.5),
+	}
 
-	estimateUpperBoundEstimator, _ := r.upperBoundEstimator.GetResourceEstimation(s)
-	// if !toScaleUB {
-	// 	estimateUpperBoundEstimator = model.Resources{}
-	// }
+	estimateUpperBoundEstimator := model.Resources{
+		model.ResourceCPU:    model.ScaleResource(estimateTargetEstimator[model.ResourceCPU], 2.0),
+		model.ResourceMemory: model.ScaleResource(estimateTargetEstimator[model.ResourceMemory], 2.0),
+	}
 
 	return RecommendedContainerResources{
-		// FilterControlledResources(r.targetEstimator.GetResourceEstimation(s), s.GetControlledResources())
 		FilterControlledResources(estimateTargetEstimator, s.GetControlledResources()),
-		// FilterControlledResources(r.lowerBoundEstimator.GetResourceEstimation(s), s.GetControlledResources()),
 		FilterControlledResources(estimateLowerBoundEstimator, s.GetControlledResources()),
-		// FilterControlledResources(r.upperBoundEstimator.GetResourceEstimation(s), s.GetControlledResources()),
 		FilterControlledResources(estimateUpperBoundEstimator, s.GetControlledResources()),
 	}, true
 }
@@ -132,7 +125,7 @@ func FilterControlledResources(estimation model.Resources, controlledResources [
 
 // CreatePodResourceRecommender returns the primary recommender.
 func CreatePodResourceRecommender() PodResourceRecommender {
-	// BSK: New VPA recommender code
+	//New VPA recommender code
 
 	targetCPUFactor := 2.0
 	lowerBoundCPUFactor := targetCPUFactor / 2.0
@@ -145,16 +138,10 @@ func CreatePodResourceRecommender() PodResourceRecommender {
 	targetScaleEstimator := NewScaleValueEstimator(targetCPUFactor, targetMemoryFactor)
 	lowerBoundScaleEstimator := NewScaleValueEstimator(lowerBoundCPUFactor, lowerBoundMemoryFactor)
 	upperBoundScaleEstimator := NewScaleValueEstimator(upperBoundCPUFactor, upperBoundMemoryFactor)
-	klog.V(1).Infof("BSK recommender logic targetScaleEstimator = %+v", targetScaleEstimator)
-	klog.V(1).Infof("BSK recommender logic lowerBoundScaleEstimator = %+v", lowerBoundScaleEstimator)
-	klog.V(1).Infof("BSK recommender logic upperBoundScaleEstimator = %+v", upperBoundScaleEstimator)
 
 	targetEstimator := WithMargin(*safetyMarginFraction, targetScaleEstimator)
 	lowerBoundEstimator := WithMargin(*safetyMarginFraction, lowerBoundScaleEstimator)
 	upperBoundEstimator := WithMargin(*safetyMarginFraction, upperBoundScaleEstimator)
-	klog.V(1).Infof("BSK 2x recommender logic targetEstimator = %+v", targetEstimator)
-	klog.V(1).Infof("BSK 2x recommender logic lowerBoundEstimator = %+v", lowerBoundEstimator)
-	klog.V(1).Infof("BSK 2x recommender logic upperBoundEstimator = %+v", upperBoundEstimator)
 
 	return &podResourceRecommender{
 		targetEstimator,

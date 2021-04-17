@@ -116,8 +116,8 @@ func patchVpa(vpaClient vpa_api.VerticalPodAutoscalerInterface, vpaName string, 
 // API object and its model representation are equal.
 func UpdateVpaIfNeeded(vpaClient vpa_api.VerticalPodAutoscalerInterface, vpaName string, newStatus,
 	oldStatus *vpa_types.VerticalPodAutoscalerStatus, updateStatus bool) (result *vpa_types.VerticalPodAutoscaler, err error) {
+
 	if apiequality.Semantic.DeepEqual(*oldStatus, *newStatus) {
-		// return patchVpa(vpaClient, vpaName, patches)
 		return nil, nil
 	}
 
@@ -127,11 +127,18 @@ func UpdateVpaIfNeeded(vpaClient vpa_api.VerticalPodAutoscalerInterface, vpaName
 			"JSON Marshalling error for VPA object %v. Reason: %+v", vpaName, err)
 	}
 
-	patches := []patchRecord{{
-		Op:    "add",
-		Path:  "/metadata/annotations/vpa-recommender.gardener.cloud/status",
-		Value: string(newVPAStatusData),
-	}}
+	vpaObj, err := vpaClient.Get(context.TODO(), vpaName, meta.GetOptions{})
+	if err != nil {
+		klog.Errorf("Error getting vpaObj for vpaName %v to update. Reason: %v", vpaName, err)
+	}
+
+	vpaObj.ObjectMeta.Annotations["vpa-recommender.gardener.cloud/status"] = string(newVPAStatusData)
+
+	_, err = vpaClient.Update(context.TODO(), vpaObj, meta.UpdateOptions{})
+	if err != nil {
+		klog.Errorf("Error updating annotations to vpa object. Reason: %v", err)
+	}
+	patches := []patchRecord{}
 
 	if updateStatus {
 		patches = append(patches, patchRecord{
@@ -150,49 +157,53 @@ func (r *recommender) UpdateVPAs() {
 	defer cnt.Observe()
 
 	for _, observedVpa := range r.clusterState.ObservedVpas {
-		key := model.VpaID{
-			Namespace: observedVpa.Namespace,
-			VpaName:   observedVpa.Name,
-		}
 
-		vpa, found := r.clusterState.Vpas[key]
-		if !found {
-			continue
-		}
-
-		resources, isRecommendation := r.podResourceRecommender.GetRecommendedPodResources(GetContainerNameToAggregateStateMap(vpa))
-		// If there is no new recommendation obtained from GetRecommendedPodResources then it is good to continue
-		if !isRecommendation {
-			continue
-		}
-
-		had := vpa.HasRecommendation()
-		vpa.UpdateRecommendation(getCappedRecommendation(vpa.ID, resources, observedVpa.Spec.ResourcePolicy))
-
-		if vpa.HasRecommendation() && !had {
-			metrics_recommender.ObserveRecommendationLatency(vpa.Created)
-		}
-		hasMatchingPods := vpa.PodCount > 0
-		vpa.UpdateConditions(hasMatchingPods)
-		if err := r.clusterState.RecordRecommendation(vpa, time.Now()); err != nil {
-			klog.Warningf("%v", err)
-			klog.V(4).Infof("VPA dump")
-			klog.V(4).Infof("%+v", vpa)
-			klog.V(4).Infof("HasMatchingPods: %v", hasMatchingPods)
-			klog.V(4).Infof("PodCount: %v", vpa.PodCount)
-			pods := r.clusterState.GetMatchingPods(vpa)
-			klog.V(4).Infof("MatchingPods: %+v", pods)
-			if len(pods) != vpa.PodCount {
-				klog.Errorf("ClusterState pod count and matching pods disagree for vpa %v/%v", vpa.ID.Namespace, vpa.ID.VpaName)
+		// TODO BSK : Test only if condition. Remove!!!
+		if observedVpa.Namespace == "kube-system" {
+			key := model.VpaID{
+				Namespace: observedVpa.Namespace,
+				VpaName:   observedVpa.Name,
 			}
-		}
-		cnt.Add(vpa)
+			vpa, found := r.clusterState.Vpas[key]
+			// TODO BSK : Test only if condition. Remove!!! remove hard code in OR
+			if !found || key.VpaName != "resource-consumer-vpa" {
+				continue
+			}
 
-		_, err := UpdateVpaIfNeeded(
-			r.vpaClient.VerticalPodAutoscalers(vpa.ID.Namespace), vpa.ID.VpaName, vpa.AsStatus(), &observedVpa.Status, model.UpdateVpaStatus)
-		if err != nil {
-			klog.Errorf(
-				"Cannot update VPA %v object. Reason: %+v", vpa.ID.VpaName, err)
+			resources, isRecommendation := r.podResourceRecommender.GetRecommendedPodResources(GetContainerNameToAggregateStateMap(vpa))
+			// If there is no new recommendation obtained from GetRecommendedPodResources then it is good to continue
+			if !isRecommendation {
+				continue
+			}
+
+			had := vpa.HasRecommendation()
+			vpa.UpdateRecommendation(getCappedRecommendation(vpa.ID, resources, observedVpa.Spec.ResourcePolicy))
+
+			if vpa.HasRecommendation() && !had {
+				metrics_recommender.ObserveRecommendationLatency(vpa.Created)
+			}
+			hasMatchingPods := vpa.PodCount > 0
+			vpa.UpdateConditions(hasMatchingPods)
+			if err := r.clusterState.RecordRecommendation(vpa, time.Now()); err != nil {
+				klog.Warningf("%v", err)
+				klog.V(4).Infof("VPA dump")
+				klog.V(4).Infof("%+v", vpa)
+				klog.V(4).Infof("HasMatchingPods: %v", hasMatchingPods)
+				klog.V(4).Infof("PodCount: %v", vpa.PodCount)
+				pods := r.clusterState.GetMatchingPods(vpa)
+				klog.V(4).Infof("MatchingPods: %+v", pods)
+				if len(pods) != vpa.PodCount {
+					klog.Errorf("ClusterState pod count and matching pods disagree for vpa %v/%v", vpa.ID.Namespace, vpa.ID.VpaName)
+				}
+			}
+			cnt.Add(vpa)
+
+			_, err := UpdateVpaIfNeeded(
+				r.vpaClient.VerticalPodAutoscalers(vpa.ID.Namespace), vpa.ID.VpaName, vpa.AsStatus(), &observedVpa.Status, model.GetAggregationsConfig().UpdateVpaStatus)
+			if err != nil {
+				klog.Errorf(
+					"Cannot update VPA %v object. Reason: %+v", vpa.ID.VpaName, err)
+			}
 		}
 	}
 }

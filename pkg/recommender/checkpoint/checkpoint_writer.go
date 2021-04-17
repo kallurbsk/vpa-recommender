@@ -51,13 +51,14 @@ type checkpointWriter struct {
 
 // customVPAAnnotations struct for storing annotations for the latest status of the variables of custom VPA
 type CustomVPAAnnotations struct {
-	LocalMaximaCPU              float64
-	LocalMaximaMemory           float64
-	LastLocalMaximaRecordedTime time.Time
-	TotalCPUSamplesCount        int
-	TotalMemorySamplesCount     int
-	CurrentCtrCPUUsage          *model.ContainerUsageSample
-	CurrentCtrMemUsage          *model.ContainerUsageSample
+	LocalMaximaCPU                 *model.ContainerUsageSample
+	LocalMaximaMemory              *model.ContainerUsageSample
+	LastCPULocalMaximaRecordedTime time.Time
+	LastMemLocalMaximaRecordedTime time.Time
+	TotalCPUSamplesCount           int
+	TotalMemorySamplesCount        int
+	CurrentCtrCPUUsage             *model.ContainerUsageSample
+	CurrentCtrMemUsage             *model.ContainerUsageSample
 }
 
 // NewCheckpointWriter returns new instance of a CheckpointWriter
@@ -115,15 +116,15 @@ func (writer *checkpointWriter) StoreCheckpoints(ctx context.Context, now time.T
 				continue
 			}
 			checkpointName := fmt.Sprintf("%s-%s", vpa.ID.VpaName, container)
-			// TODO BSK : Check if the recommendation has to be updated here to VPACheckpoint as annotation
 			vpaAnnotations := CustomVPAAnnotations{
-				LocalMaximaCPU:              float64(aggregatedContainerState.LastCtrCPULocalMaxima.Usage),
-				LocalMaximaMemory:           float64(aggregatedContainerState.LastCtrMemoryLocalMaxima.Usage),
-				LastLocalMaximaRecordedTime: aggregatedContainerState.LastLocalMaximaRecordedTime,
-				TotalCPUSamplesCount:        aggregatedContainerState.TotalCPUSamplesCount,
-				TotalMemorySamplesCount:     aggregatedContainerState.TotalMemorySamplesCount,
-				CurrentCtrCPUUsage:          aggregatedContainerState.CurrentCtrCPUUsage,
-				CurrentCtrMemUsage:          aggregatedContainerState.CurrentCtrMemUsage,
+				LocalMaximaCPU:                 aggregatedContainerState.LastCtrCPULocalMaxima,
+				LocalMaximaMemory:              aggregatedContainerState.LastCtrMemoryLocalMaxima,
+				LastCPULocalMaximaRecordedTime: aggregatedContainerState.LastCPULocalMaximaRecordedTime,
+				LastMemLocalMaximaRecordedTime: aggregatedContainerState.LastMemLocalMaximaRecordedTime,
+				TotalCPUSamplesCount:           aggregatedContainerState.TotalCPUSamplesCount,
+				TotalMemorySamplesCount:        aggregatedContainerState.TotalMemorySamplesCount,
+				CurrentCtrCPUUsage:             aggregatedContainerState.CurrentCtrCPUUsage,
+				CurrentCtrMemUsage:             aggregatedContainerState.CurrentCtrMemUsage,
 			}
 
 			vpaData, err := json.Marshal(vpaAnnotations)
@@ -143,7 +144,9 @@ func (writer *checkpointWriter) StoreCheckpoints(ctx context.Context, now time.T
 				},
 				Status: *containerCheckpoint,
 			}
-			err = api_util.CreateOrUpdateVpaCheckpoint(writer.vpaCheckpointClient.VerticalPodAutoscalerCheckpoints(vpa.ID.Namespace), &vpaCheckpoint)
+
+			vpaCheckpointClient := writer.vpaCheckpointClient.VerticalPodAutoscalerCheckpoints(vpa.ID.Namespace)
+			err = api_util.CreateOrUpdateVpaCheckpoint(vpaCheckpointClient, &vpaCheckpoint)
 			if err != nil {
 				klog.Errorf("Cannot save VPA %s/%s checkpoint for %s. Reason: %+v",
 					vpa.ID.Namespace, vpaCheckpoint.Spec.VPAObjectName, vpaCheckpoint.Spec.ContainerName, err)
@@ -152,6 +155,9 @@ func (writer *checkpointWriter) StoreCheckpoints(ctx context.Context, now time.T
 					vpa.ID.Namespace, vpaCheckpoint.Spec.VPAObjectName, vpaCheckpoint.Spec.ContainerName)
 				vpa.CheckpointWritten = now
 			}
+
+			klog.Infof("%+v", vpaCheckpoint.ObjectMeta.Annotations["vpaData"])
+
 			minCheckpoints--
 		}
 	}

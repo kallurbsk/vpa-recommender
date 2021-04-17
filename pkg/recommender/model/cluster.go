@@ -24,7 +24,6 @@ import (
 	labels "k8s.io/apimachinery/pkg/labels"
 
 	vpa_types "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
-
 	vpa_utils "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/vpa"
 	"k8s.io/klog"
 )
@@ -198,6 +197,7 @@ func (cluster *ClusterState) AddOrUpdateContainer(containerID ContainerID, reque
 		// Container aleady exists. Possibly update the request.
 		container.Request = request
 	}
+
 	return nil
 }
 
@@ -206,6 +206,7 @@ func (cluster *ClusterState) AddOrUpdateContainer(containerID ContainerID, reque
 // ClusterState first. Otherwise an error is returned.
 func (cluster *ClusterState) AddSample(sample *ContainerUsageSampleWithKey) error {
 	pod, podExists := cluster.Pods[sample.Container.PodID]
+
 	if !podExists {
 		return NewKeyError(sample.Container.PodID)
 	}
@@ -213,9 +214,11 @@ func (cluster *ClusterState) AddSample(sample *ContainerUsageSampleWithKey) erro
 	if !containerExists {
 		return NewKeyError(sample.Container)
 	}
+
 	if !ContainerState.AddSample(&sample.ContainerUsageSample) {
 		return fmt.Errorf("sample discarded (invalid or out of order)")
 	}
+
 	return nil
 }
 
@@ -342,6 +345,7 @@ func (cluster *ClusterState) findOrCreateAggregateContainerState(containerID Con
 			vpa.UseAggregationIfMatching(aggregateStateKey, aggregateContainerState)
 		}
 	}
+
 	return aggregateContainerState
 }
 

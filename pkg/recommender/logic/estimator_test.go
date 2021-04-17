@@ -186,5 +186,3 @@ func TestScaledResourceEstimator(t *testing.T) {
 	resourceEstimation, _ = scaledEstimator.GetResourceEstimation(acs)
 	assert.Equal(t, 3.14e8, model.BytesFromMemoryAmount(resourceEstimation[model.ResourceMemory]))
 }
-
-// TODO BSK : cover tests for threshold estimators too
