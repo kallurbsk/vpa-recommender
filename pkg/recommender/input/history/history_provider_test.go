@@ -28,7 +28,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
+	"github.com/gardener/vpa-recommender/pkg/recommender/model"
 )
 
 const (

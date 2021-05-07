@@ -18,8 +18,6 @@ package model
 
 import (
 	"time"
-
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/util"
 )
 
 // AggregationsConfig is used to configure aggregation behaviour.
@@ -29,57 +27,42 @@ type AggregationsConfig struct {
 	// Memory usage peaks are aggregated in multiples of this interval. In other words
 	// there is one memory usage sample per interval (the maximum usage over that
 	// interval).
+	// Currently it is used as more of a counter for keeping the aggregate container state
+	// relevant with the amount of samples gone in
 	MemoryAggregationInterval time.Duration
-	// MemoryAggregationWindowIntervalCount is the number of consecutive MemoryAggregationIntervals
-	// which make up the MemoryAggregationWindowLength which in turn is the period for memory
-	// usage aggregation by VPA.
-	MemoryAggregationIntervalCount int64
-	// CPUHistogramOptions are options to be used by histograms that store
-	// CPU measures expressed in cores.
-	CPUHistogramOptions util.HistogramOptions
-	// MemoryHistogramOptions are options to be used by histograms that
-	// store memory measures expressed in bytes.
-	MemoryHistogramOptions util.HistogramOptions
-	// HistogramBucketSizeGrowth defines the growth rate of the histogram buckets.
-	// Each bucket is wider than the previous one by this fraction.
-	HistogramBucketSizeGrowth float64
-	// MemoryHistogramDecayHalfLife is the amount of time it takes a historical
-	// memory usage sample to lose half of its weight. In other words, a fresh
-	// usage sample is twice as 'important' as one with age equal to the half
-	// life period.
-	MemoryHistogramDecayHalfLife time.Duration
-	// CPUHistogramDecayHalfLife is the amount of time it takes a historical
-	// CPU usage sample to lose half of its weight.
-	CPUHistogramDecayHalfLife time.Duration
-
+	// DaysToPreserveContainerState is the total number of days to preserve the
+	// aggregate container state
+	DaysToPreserveContainerState int64
+	// ThresholdMonitorTimeWindow is the time window for setting the local maxima of usage
+	// of resources. This window helps in calculating a local maxima within it for a given
+	// resource which inturn is used during the scale down to not recommend resources below it
 	ThresholdMonitorTimeWindow time.Duration
-	ThresholdScaleDown         float64
-	ThresholdScaleUp           float64
-	ScaleDownSafetyMargin      float64
-	ScaleUpValue               float64
-	ThresholdNumCrashes        int
-	UpdateVpaStatus            bool
+	// ThresholdScaleDown is the scale down value multiple of the current usage of resource
+	// above which the scale value is not altered
+	ThresholdScaleDown float64
+	// ThresholdScaleUp is the scale up value multiple of the current usage of resource
+	// below which the scale value is not altered
+	ThresholdScaleUp float64
+	// ScaleDownSafetyMargin is the scale down safety lower margin of the current usage
+	// which will act as the least value recommended during scale down
+	ScaleDownSafetyMargin float64
+	// ScaleUpValue is the actual multiple by which the scale up recommendation of the
+	// resource based on current usage is recommended
+	ScaleUpValue float64
+	// ThresholdNumCrashes is the minimum number of crashes that is withstood before doubling
+	// both CPU and Memory resource based on the current usage
+	ThresholdNumCrashes int
+	// UpdateVpaStatus flag suggests if whether to update the VPA status with the newer recommendation
+	// value or just keep it a read only in annotations
+	UpdateVpaStatus bool
 }
 
 const (
-	// minSampleWeight is the minimal weight of any sample (prior to including decaying factor)
-	minSampleWeight = 0.1
-	// epsilon is the minimal weight kept in histograms, it should be small enough that old samples
-	// (just inside MemoryAggregationWindowLength) added with minSampleWeight are still kept
-	epsilon = 0.001 * minSampleWeight
-	// DefaultMemoryAggregationIntervalCount is the default value for MemoryAggregationIntervalCount.
-	DefaultMemoryAggregationIntervalCount = 8
+	// DefaultDaysToPreserveContainerState is the default value for DaysToPreserveContainerState.
+	DefaultDaysToPreserveContainerState = 8
 	// DefaultMemoryAggregationInterval is the default value for MemoryAggregationInterval.
 	// which the peak memory usage is computed.
 	DefaultMemoryAggregationInterval = time.Hour * 24
-	// DefaultHistogramBucketSizeGrowth is the default value for HistogramBucketSizeGrowth.
-	DefaultHistogramBucketSizeGrowth = 0.05 // Make each bucket 5% larger than the previous one.
-	// DefaultMemoryHistogramDecayHalfLife is the default value for MemoryHistogramDecayHalfLife.
-	DefaultMemoryHistogramDecayHalfLife = time.Hour * 24
-	// DefaultCPUHistogramDecayHalfLife is the default value for CPUHistogramDecayHalfLife.
-	// CPU usage sample to lose half of its weight.
-	DefaultCPUHistogramDecayHalfLife = time.Hour * 24
-	// NEW VPA
 	// DefaultThresholdMonitorTimeWindow is the default time window to get local maxima of CPU and memory usage till the curren time
 	DefaultThresholdMonitorTimeWindow = time.Minute * 30
 	// DefaultThresholdScaleUp is the default threshold value beyond which VPA scale up should kick in
@@ -98,38 +81,13 @@ const (
 
 // GetMemoryAggregationWindowLength returns the total length of the memory usage history aggregated by VPA.
 func (a *AggregationsConfig) GetMemoryAggregationWindowLength() time.Duration {
-	return a.MemoryAggregationInterval * time.Duration(a.MemoryAggregationIntervalCount)
-}
-
-func (a *AggregationsConfig) cpuHistogramOptions() util.HistogramOptions {
-	// CPU histograms use exponential bucketing scheme with the smallest bucket
-	// size of 0.01 core, max of 1000.0 cores and the relative error of HistogramRelativeError.
-	//
-	// When parameters below are changed SupportedCheckpointVersion has to be bumped.
-	options, err := util.NewExponentialHistogramOptions(1000.0, 0.01, 1.+a.HistogramBucketSizeGrowth, epsilon)
-	if err != nil {
-		panic("Invalid CPU histogram options") // Should not happen.
-	}
-	return options
-}
-
-func (a *AggregationsConfig) memoryHistogramOptions() util.HistogramOptions {
-	// Memory histograms use exponential bucketing scheme with the smallest
-	// bucket size of 10MB, max of 1TB and the relative error of HistogramRelativeError.
-	//
-	// When parameters below are changed SupportedCheckpointVersion has to be bumped.
-	options, err := util.NewExponentialHistogramOptions(1e12, 1e7, 1.+a.HistogramBucketSizeGrowth, epsilon)
-	if err != nil {
-		panic("Invalid memory histogram options") // Should not happen.
-	}
-	return options
+	return a.MemoryAggregationInterval * time.Duration(a.DaysToPreserveContainerState)
 }
 
 // NewAggregationsConfig creates a new AggregationsConfig based on the supplied parameters and default values.
-func NewAggregationsConfig(memoryAggregationInterval time.Duration,
-	memoryAggregationIntervalCount int64,
-	memoryHistogramDecayHalfLife,
-	cpuHistogramDecayHalfLife time.Duration,
+func NewAggregationsConfig(
+	MemoryAggregationInterval time.Duration,
+	DaysToPreserveContainerState int64,
 	thresholdMonitorTimeWindow time.Duration,
 	thresholdScaleUp float64,
 	thresholdScaleDown float64,
@@ -139,21 +97,17 @@ func NewAggregationsConfig(memoryAggregationInterval time.Duration,
 	updateVpaStatus bool) *AggregationsConfig {
 
 	a := &AggregationsConfig{
-		MemoryAggregationInterval:      memoryAggregationInterval,
-		MemoryAggregationIntervalCount: memoryAggregationIntervalCount,
-		HistogramBucketSizeGrowth:      DefaultHistogramBucketSizeGrowth,
-		MemoryHistogramDecayHalfLife:   memoryHistogramDecayHalfLife,
-		CPUHistogramDecayHalfLife:      cpuHistogramDecayHalfLife,
-		ThresholdMonitorTimeWindow:     thresholdMonitorTimeWindow,
-		ThresholdScaleUp:               thresholdScaleUp,
-		ThresholdScaleDown:             thresholdScaleDown,
-		ScaleDownSafetyMargin:          scaleDownSafetyMargin,
-		ScaleUpValue:                   scaleUpValue,
-		ThresholdNumCrashes:            thresholdNumCrashes,
-		UpdateVpaStatus:                updateVpaStatus,
+		MemoryAggregationInterval:    MemoryAggregationInterval,
+		DaysToPreserveContainerState: DaysToPreserveContainerState,
+		ThresholdMonitorTimeWindow:   thresholdMonitorTimeWindow,
+		ThresholdScaleUp:             thresholdScaleUp,
+		ThresholdScaleDown:           thresholdScaleDown,
+		ScaleDownSafetyMargin:        scaleDownSafetyMargin,
+		ScaleUpValue:                 scaleUpValue,
+		ThresholdNumCrashes:          thresholdNumCrashes,
+		UpdateVpaStatus:              updateVpaStatus,
 	}
-	a.CPUHistogramOptions = a.cpuHistogramOptions()
-	a.MemoryHistogramOptions = a.memoryHistogramOptions()
+
 	return a
 }
 
@@ -162,7 +116,7 @@ var aggregationsConfig *AggregationsConfig
 // GetAggregationsConfig gets the aggregations config. Initializes to default values if not initialized already.
 func GetAggregationsConfig() *AggregationsConfig {
 	if aggregationsConfig == nil {
-		aggregationsConfig = NewAggregationsConfig(DefaultMemoryAggregationInterval, DefaultMemoryAggregationIntervalCount, DefaultMemoryHistogramDecayHalfLife, DefaultCPUHistogramDecayHalfLife, DefaultThresholdMonitorTimeWindow, DefaultThresholdScaleUp, DefaultThresholdScaleDown, DefaultScaleDownSafetyMargin, DefaultScaleUpMultiple, DefaultThresholdNumCrashes, DefaultUpdateVpaStatus)
+		aggregationsConfig = NewAggregationsConfig(DefaultMemoryAggregationInterval, DefaultDaysToPreserveContainerState, DefaultThresholdMonitorTimeWindow, DefaultThresholdScaleUp, DefaultThresholdScaleDown, DefaultScaleDownSafetyMargin, DefaultScaleUpMultiple, DefaultThresholdNumCrashes, DefaultUpdateVpaStatus)
 	}
 
 	return aggregationsConfig

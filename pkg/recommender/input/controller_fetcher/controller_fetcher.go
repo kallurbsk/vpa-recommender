@@ -93,12 +93,12 @@ func (f *controllerFetcher) periodicallyRefreshCache(ctx context.Context, period
 			return
 		case <-time.After(period):
 			keysToRefresh := f.scaleSubresourceCacheStorage.GetKeysToRefresh()
-			// klog.Info("Starting to refresh entries in controllerFetchers scaleSubresourceCacheStorage")
+			klog.Infof("Starting to refresh entries in controllerFetchers scaleSubresourceCacheStorage")
 			for _, item := range keysToRefresh {
 				scale, err := f.scaleNamespacer.Scales(item.namespace).Get(context.TODO(), item.groupResource, item.name, metav1.GetOptions{})
 				f.scaleSubresourceCacheStorage.Refresh(item.namespace, item.groupResource, item.name, scale, err)
 			}
-			// klog.Infof("Finished refreshing %d entries in controllerFetchers scaleSubresourceCacheStorage", len(keysToRefresh))
+			klog.Infof("Finished refreshing %d entries in controllerFetchers scaleSubresourceCacheStorage", len(keysToRefresh))
 			f.scaleSubresourceCacheStorage.RemoveExpired()
 		}
 	}
@@ -139,7 +139,7 @@ func NewControllerFetcher(config *rest.Config, kubeClient kube_client.Interface,
 		if !synced {
 			klog.Warningf("Could not sync cache for %s: %v", kind, err)
 		} else {
-			klog.Infof("Initial sync of %s completed", kind)
+			klog.V(1).Infof("Initial sync of %s completed", kind)
 		}
 	}
 

@@ -107,7 +107,8 @@ func NewClusterState() *ClusterState {
 // ID of the container it belongs to.
 type ContainerUsageSampleWithKey struct {
 	ContainerUsageSample
-	Container ContainerID
+	Container    ContainerID
+	RestartCount int32
 }
 
 // AddOrUpdatePod updates the state of the pod with a given PodID, if it is
@@ -185,17 +186,29 @@ func (cluster *ClusterState) DeletePod(PodID PodID) {
 // adds it to the parent pod in the ClusterState object, if not yet present.
 // Requires the pod to be added to the ClusterState first. Otherwise an error is
 // returned.
-func (cluster *ClusterState) AddOrUpdateContainer(containerID ContainerID, request Resources) error {
+func (cluster *ClusterState) AddOrUpdateContainer(containerID ContainerID, request Resources, restartCount int, ready bool, curState ContainerCurrentState) error {
 	pod, podExists := cluster.Pods[containerID.PodID]
 	if !podExists {
 		return NewKeyError(containerID.PodID)
 	}
+
+	acs := cluster.findOrCreateAggregateContainerState(containerID)
 	if container, containerExists := pod.Containers[containerID.ContainerName]; !containerExists {
-		cluster.findOrCreateAggregateContainerState(containerID)
-		pod.Containers[containerID.ContainerName] = NewContainerState(request, NewContainerStateAggregatorProxy(cluster, containerID))
+		pod.Containers[containerID.ContainerName] = NewContainerState(request, restartCount, NewContainerStateAggregatorProxy(cluster, containerID))
+		restartBudget := acs.RestartBudget - (restartCount - acs.LastSeenRestartCount)
+		pod.Containers[containerID.ContainerName].RecordRestartCount(restartCount, restartBudget)
+		if acs.CurrentCtrCPUUsage.Request == 0 {
+			acs.CurrentCtrCPUUsage.Request = request[ResourceCPU]
+		}
+		if acs.CurrentCtrMemUsage.Request == 0 {
+			acs.CurrentCtrMemUsage.Request = request[ResourceMemory]
+		}
 	} else {
 		// Container aleady exists. Possibly update the request.
 		container.Request = request
+		container.RecordRestartCount(restartCount, restartCount-acs.LastSeenRestartCount)
+		// container.RecordReadiness(ready)
+		container.aggregator.SetCurrentContainerState(curState)
 	}
 
 	return nil
@@ -360,12 +373,7 @@ func (cluster *ClusterState) GarbageCollectAggregateCollectionStates(now time.Ti
 	activeKeys := cluster.getActiveAggregateStateKeys()
 	for key, aggregateContainerState := range cluster.aggregateStateMap {
 		isKeyActive := activeKeys[key]
-		if !isKeyActive && aggregateContainerState.isEmpty() {
-			keysToDelete = append(keysToDelete, key)
-			klog.V(1).Infof("Removing empty and inactive AggregateCollectionState for %+v", key)
-			continue
-		}
-		if aggregateContainerState.isExpired(now) {
+		if !isKeyActive && aggregateContainerState.isExpired(now) {
 			keysToDelete = append(keysToDelete, key)
 			klog.V(1).Infof("Removing expired AggregateCollectionState for %+v", key)
 		}

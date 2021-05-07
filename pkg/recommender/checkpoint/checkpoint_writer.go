@@ -59,6 +59,8 @@ type CustomVPAAnnotations struct {
 	TotalMemorySamplesCount        int
 	CurrentCtrCPUUsage             *model.ContainerUsageSample
 	CurrentCtrMemUsage             *model.ContainerUsageSample
+	CurrentContainerState          model.ContainerCurrentState
+	LastSeenRestartCount           int
 }
 
 // NewCheckpointWriter returns new instance of a CheckpointWriter
@@ -109,12 +111,7 @@ func (writer *checkpointWriter) StoreCheckpoints(ctx context.Context, now time.T
 
 		aggregateContainerStateMap := buildAggregateContainerStateMap(vpa, writer.cluster, now)
 		for container, aggregatedContainerState := range aggregateContainerStateMap {
-			containerCheckpoint, err := aggregatedContainerState.SaveToCheckpoint()
 
-			if err != nil {
-				klog.Errorf("Cannot serialize checkpoint for vpa %v container %v. Reason: %+v", vpa.ID.VpaName, container, err)
-				continue
-			}
 			checkpointName := fmt.Sprintf("%s-%s", vpa.ID.VpaName, container)
 			vpaAnnotations := CustomVPAAnnotations{
 				LocalMaximaCPU:                 aggregatedContainerState.LastCtrCPULocalMaxima,
@@ -125,6 +122,8 @@ func (writer *checkpointWriter) StoreCheckpoints(ctx context.Context, now time.T
 				TotalMemorySamplesCount:        aggregatedContainerState.TotalMemorySamplesCount,
 				CurrentCtrCPUUsage:             aggregatedContainerState.CurrentCtrCPUUsage,
 				CurrentCtrMemUsage:             aggregatedContainerState.CurrentCtrMemUsage,
+				CurrentContainerState:          aggregatedContainerState.CurrentContainerState,
+				LastSeenRestartCount:           aggregatedContainerState.LastSeenRestartCount,
 			}
 
 			vpaData, err := json.Marshal(vpaAnnotations)
@@ -142,10 +141,20 @@ func (writer *checkpointWriter) StoreCheckpoints(ctx context.Context, now time.T
 					ContainerName: container,
 					VPAObjectName: vpa.ID.VpaName,
 				},
-				Status: *containerCheckpoint,
+				//Status: *containerCheckpoint,
 			}
 
 			vpaCheckpointClient := writer.vpaCheckpointClient.VerticalPodAutoscalerCheckpoints(vpa.ID.Namespace)
+			getVpaCPObj, err := vpaCheckpointClient.Get(context.TODO(), checkpointName, metav1.GetOptions{})
+			if err != nil {
+				klog.Infof("Cannot get details of VPA Checkpoint object. Reason: %+v", err)
+			}
+			vpaCheckpoint.SetResourceVersion(getVpaCPObj.GetResourceVersion())
+			_, err = vpaCheckpointClient.Update(context.TODO(), &vpaCheckpoint, metav1.UpdateOptions{})
+			if err != nil {
+				klog.Errorf("Cannot save annotations to VPA checkpoint. Reason: %+v", err)
+			}
+
 			err = api_util.CreateOrUpdateVpaCheckpoint(vpaCheckpointClient, &vpaCheckpoint)
 			if err != nil {
 				klog.Errorf("Cannot save VPA %s/%s checkpoint for %s. Reason: %+v",
@@ -155,8 +164,6 @@ func (writer *checkpointWriter) StoreCheckpoints(ctx context.Context, now time.T
 					vpa.ID.Namespace, vpaCheckpoint.Spec.VPAObjectName, vpaCheckpoint.Spec.ContainerName)
 				vpa.CheckpointWritten = now
 			}
-
-			klog.Infof("%+v", vpaCheckpoint.ObjectMeta.Annotations["vpaData"])
 
 			minCheckpoints--
 		}
@@ -169,25 +176,22 @@ func (writer *checkpointWriter) StoreCheckpoints(ctx context.Context, now time.T
 // Note however that we exclude the most recent memory peak for each container (see below).
 func buildAggregateContainerStateMap(vpa *model.Vpa, cluster *model.ClusterState, now time.Time) map[string]*model.AggregateContainerState {
 	aggregateContainerStateMap := vpa.AggregateStateByContainerName()
+	newAggregateContainerStateMap := make(model.ContainerNameToAggregateStateMap)
 	// Note: the memory peak from the current (ongoing) aggregation interval is not included in the
 	// checkpoint to avoid having multiple peaks in the same interval after the state is restored from
 	// the checkpoint. Therefore we are extracting the current peak from all containers.
 	// TODO: Avoid the nested loop over all containers for each VPA.
 	for _, pod := range cluster.Pods {
-		for containerName, container := range pod.Containers {
+		for containerName, _ := range pod.Containers {
 			aggregateKey := cluster.MakeAggregateStateKey(pod, containerName)
 			if vpa.UsesAggregation(aggregateKey) {
 				if aggregateContainerState, exists := aggregateContainerStateMap[containerName]; exists {
-					subtractCurrentContainerMemoryPeak(aggregateContainerState, container, now)
+					newAggregateContainerStateMap[containerName] = aggregateContainerState
+					// subtractCurrentContainerMemoryPeak(aggregateContainerState, container, now)
 				}
 			}
 		}
 	}
-	return aggregateContainerStateMap
-}
 
-func subtractCurrentContainerMemoryPeak(a *model.AggregateContainerState, container *model.ContainerState, now time.Time) {
-	if now.Before(container.WindowEnd) {
-		a.AggregateMemoryPeaks.SubtractSample(model.BytesFromMemoryAmount(container.GetMaxMemoryPeak()), 1.0, container.WindowEnd)
-	}
+	return newAggregateContainerStateMap
 }

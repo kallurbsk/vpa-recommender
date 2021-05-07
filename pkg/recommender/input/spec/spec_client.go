@@ -20,8 +20,6 @@ import (
 	"github.com/gardener/vpa-recommender/pkg/recommender/model"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
-
-	// "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
 	v1lister "k8s.io/client-go/listers/core/v1"
 )
 
@@ -37,6 +35,13 @@ type BasicPodSpec struct {
 	Phase v1.PodPhase
 }
 
+// CurrentState container basic information of the current state of the container
+type CurrentState struct {
+	// Reason variable is present if Container Status is Waiting or Terminated.
+	// If container is running, it is not defined and hence will be empty.
+	Reason string
+}
+
 // BasicContainerSpec contains basic information defining a container.
 type BasicContainerSpec struct {
 	// ID identifies the container within a cluster.
@@ -45,6 +50,12 @@ type BasicContainerSpec struct {
 	Image string
 	// Currently requested resources for this container.
 	Request model.Resources
+	// Restart Count of a particular container
+	RestartCount int
+	// Ready indicates readiness probe of the container
+	Ready bool
+	// LastState indicates the last state of the container
+	CurrentState
 }
 
 //SpecClient provides information about pods and containers Specification
@@ -98,14 +109,14 @@ func newContainerSpecs(podID model.PodID, pod *v1.Pod) []BasicContainerSpec {
 	var containerSpecs []BasicContainerSpec
 
 	for _, container := range pod.Spec.Containers {
-		containerSpec := newContainerSpec(podID, container)
+		containerSpec := newContainerSpec(podID, pod, container)
 		containerSpecs = append(containerSpecs, containerSpec)
 	}
 
 	return containerSpecs
 }
 
-func newContainerSpec(podID model.PodID, container v1.Container) BasicContainerSpec {
+func newContainerSpec(podID model.PodID, pod *v1.Pod, container v1.Container) BasicContainerSpec {
 	containerSpec := BasicContainerSpec{
 		ID: model.ContainerID{
 			PodID:         podID,
@@ -114,6 +125,19 @@ func newContainerSpec(podID model.PodID, container v1.Container) BasicContainerS
 		Image:   container.Image,
 		Request: calculateRequestedResources(container),
 	}
+
+	for _, containerStatus := range pod.Status.ContainerStatuses {
+		if containerStatus.Name == container.Name {
+			containerSpec.RestartCount = int(containerStatus.RestartCount)
+			containerSpec.Ready = containerStatus.Ready
+			curState := CurrentState{}
+			if containerStatus.State.Waiting != nil {
+				curState.Reason = containerStatus.State.Waiting.Reason
+				containerSpec.CurrentState = curState
+			}
+		}
+	}
+
 	return containerSpec
 }
 

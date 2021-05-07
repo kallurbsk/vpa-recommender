@@ -89,20 +89,22 @@ func (r *podResourceRecommender) GetRecommendedPodResources(containerNameToAggre
 func (r *podResourceRecommender) estimateContainerResources(s *model.AggregateContainerState) (RecommendedContainerResources, bool) {
 	// Perculate the resource estimation scale recommendation value using boolean
 	estimateTargetEstimator, toScaleTarget := r.targetEstimator.GetResourceEstimation(s)
-	// if false to scale, then just reset the value
+	// if false, then just reset the value
 	if !toScaleTarget {
 		// No recommendation
 		return RecommendedContainerResources{model.Resources{}, model.Resources{}, model.Resources{}}, false
 	}
 
+	lowerBoundMultiple := 0.5 // half the target estimation
 	estimateLowerBoundEstimator := model.Resources{
-		model.ResourceCPU:    model.ScaleResource(estimateTargetEstimator[model.ResourceCPU], 0.5),
-		model.ResourceMemory: model.ScaleResource(estimateTargetEstimator[model.ResourceMemory], 0.5),
+		model.ResourceCPU:    model.ScaleResource(estimateTargetEstimator[model.ResourceCPU], lowerBoundMultiple),
+		model.ResourceMemory: model.ScaleResource(estimateTargetEstimator[model.ResourceMemory], lowerBoundMultiple),
 	}
 
+	upperBoundMultiple := 2.0 // twice the target estimation
 	estimateUpperBoundEstimator := model.Resources{
-		model.ResourceCPU:    model.ScaleResource(estimateTargetEstimator[model.ResourceCPU], 2.0),
-		model.ResourceMemory: model.ScaleResource(estimateTargetEstimator[model.ResourceMemory], 2.0),
+		model.ResourceCPU:    model.ScaleResource(estimateTargetEstimator[model.ResourceCPU], upperBoundMultiple),
+		model.ResourceMemory: model.ScaleResource(estimateTargetEstimator[model.ResourceMemory], upperBoundMultiple),
 	}
 
 	return RecommendedContainerResources{
@@ -125,13 +127,12 @@ func FilterControlledResources(estimation model.Resources, controlledResources [
 
 // CreatePodResourceRecommender returns the primary recommender.
 func CreatePodResourceRecommender() PodResourceRecommender {
-	//New VPA recommender code
-
-	targetCPUFactor := 2.0
+	config := model.GetAggregationsConfig()
+	targetCPUFactor := config.ScaleUpValue
 	lowerBoundCPUFactor := targetCPUFactor / 2.0
 	upperBoundCPUFactor := 2.0 * targetCPUFactor
 
-	targetMemoryFactor := 2.0
+	targetMemoryFactor := config.ScaleUpValue
 	lowerBoundMemoryFactor := targetMemoryFactor / 2.0
 	upperBoundMemoryFactor := 2.0 * targetMemoryFactor
 

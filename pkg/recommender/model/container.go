@@ -54,6 +54,8 @@ type ContainerUsageSample struct {
 type ContainerState struct {
 	// Current request.
 	Request Resources
+	// Number of restarts seen for the container
+	RestartCount int
 	// Start of the latest CPU usage sample that was aggregated.
 	LastCPUSampleStart time.Time
 	// Max memory usage observed in the current aggregation interval.
@@ -69,13 +71,14 @@ type ContainerState struct {
 }
 
 // NewContainerState returns a new ContainerState.
-func NewContainerState(request Resources, aggregator ContainerStateAggregator) *ContainerState {
+func NewContainerState(request Resources, restartCount int, aggregator ContainerStateAggregator) *ContainerState {
 	return &ContainerState{
 		Request:               request,
 		LastCPUSampleStart:    time.Time{},
 		WindowEnd:             time.Time{},
 		lastMemorySampleStart: time.Time{},
 		aggregator:            aggregator,
+		RestartCount:          restartCount,
 	}
 }
 
@@ -145,28 +148,20 @@ func (container *ContainerState) addMemorySample(sample *ContainerUsageSample, i
 		container.WindowEnd = ts
 	}
 
-	// Each container aggregates one peak per aggregation interval. If the timestamp of the
-	// current sample is earlier than the end of the current interval (WindowEnd) and is larger
-	// than the current peak, the peak is updated in the aggregation by subtracting the old value
-	// and adding the new value.
+	// Checks if there is a new peak value in memory sample and adds it to the sample of
+	// memory usage collected in aggregate container state. Previously the logic was removing
+	// old peak value from samples bucket and adding new. As we don't maintain a history of samples
+	// anymore, removing sample becomes irrelevant and also just updating the new peak should work
 	addNewPeak := false
 	if ts.Before(container.WindowEnd) {
 		oldMaxMem := container.GetMaxMemoryPeak()
 		if oldMaxMem != 0 && sample.Usage > oldMaxMem {
-			// Remove the old peak.
-			oldPeak := ContainerUsageSample{
-				MeasureStart: container.WindowEnd,
-				Usage:        oldMaxMem,
-				Request:      sample.Request,
-				Resource:     ResourceMemory,
-			}
-			container.aggregator.SubtractSample(&oldPeak)
 			addNewPeak = true
 		}
 	} else {
 		// Shift the memory aggregation window to the next interval.
-		memoryAggregationInterval := GetAggregationsConfig().MemoryAggregationInterval
-		shift := truncate(ts.Sub(container.WindowEnd), memoryAggregationInterval) + memoryAggregationInterval
+		MemoryAggregationInterval := GetAggregationsConfig().MemoryAggregationInterval
+		shift := truncate(ts.Sub(container.WindowEnd), MemoryAggregationInterval) + MemoryAggregationInterval
 		container.WindowEnd = container.WindowEnd.Add(shift)
 		container.memoryPeak = 0
 		container.oomPeak = 0
@@ -180,6 +175,7 @@ func (container *ContainerState) addMemorySample(sample *ContainerUsageSample, i
 			Request:      sample.Request,
 			Resource:     ResourceMemory,
 		}
+
 		container.aggregator.AddSample(&newPeak)
 		if isOOM {
 			container.oomPeak = sample.Usage
@@ -213,13 +209,20 @@ func (container *ContainerState) RecordOOM(timestamp time.Time, requestedMemory 
 	return nil
 }
 
-// AddSample adds a usage sample to the given ContainerState. Requires samples
-// for a single resource to be passed in chronological order (i.e. in order of
-// growing MeasureStart). Invalid samples (out of order or measure out of legal
-// range) are discarded. Returns true if the sample was aggregated, false if it
-// was discarded.
-// Note: usage samples don't hold their end timestamp / duration. They are
-// implicitly assumed to be disjoint when aggregating.
+// RecordRestartCount records the latest restart count observed for a particular container
+func (container *ContainerState) RecordRestartCount(restartCount int, restartBudget int) {
+	container.aggregator.SetContainerRestartCounts(restartCount, restartBudget)
+}
+
+// RecordCurrentContainerState records the current container state reason if waiting or terminated
+func (container *ContainerState) RecordCurrentContainerState(curState ContainerCurrentState) {
+	container.aggregator.SetCurrentContainerState(curState)
+}
+
+// AddSample adds a resource usage sample to the aggregate containrer state.
+// Each sample is further checked with already recorded local maxima of the
+// resource within a local maxima recording cooling window and updated accordingly.
+// Each sample however is used to update the current container usage struct.
 func (container *ContainerState) AddSample(sample *ContainerUsageSample) bool {
 	switch sample.Resource {
 	case ResourceCPU:

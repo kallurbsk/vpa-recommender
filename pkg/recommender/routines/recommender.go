@@ -133,7 +133,6 @@ func UpdateVpaIfNeeded(vpaClient vpa_api.VerticalPodAutoscalerInterface, vpaName
 	}
 
 	vpaObj.ObjectMeta.Annotations["vpa-recommender.gardener.cloud/status"] = string(newVPAStatusData)
-
 	_, err = vpaClient.Update(context.TODO(), vpaObj, meta.UpdateOptions{})
 	if err != nil {
 		klog.Errorf("Error updating annotations to vpa object. Reason: %v", err)
@@ -158,53 +157,51 @@ func (r *recommender) UpdateVPAs() {
 
 	for _, observedVpa := range r.clusterState.ObservedVpas {
 
-		// TODO BSK : Test only if condition. Remove!!!
-		if observedVpa.Namespace == "kube-system" {
-			key := model.VpaID{
-				Namespace: observedVpa.Namespace,
-				VpaName:   observedVpa.Name,
-			}
-			vpa, found := r.clusterState.Vpas[key]
-			// TODO BSK : Test only if condition. Remove!!! remove hard code in OR
-			if !found || key.VpaName != "resource-consumer-vpa" {
-				continue
-			}
+		key := model.VpaID{
+			Namespace: observedVpa.Namespace,
+			VpaName:   observedVpa.Name,
+		}
+		vpa, found := r.clusterState.Vpas[key]
+		// if VPA is not found continue without updating any new recommendations
+		if !found {
+			continue
+		}
 
-			resources, isRecommendation := r.podResourceRecommender.GetRecommendedPodResources(GetContainerNameToAggregateStateMap(vpa))
-			// If there is no new recommendation obtained from GetRecommendedPodResources then it is good to continue
-			if !isRecommendation {
-				continue
-			}
+		resources, isRecommendation := r.podResourceRecommender.GetRecommendedPodResources(GetContainerNameToAggregateStateMap(vpa))
+		// Continue without updating the VPA if no new recommendations
+		if !isRecommendation {
+			continue
+		}
 
-			had := vpa.HasRecommendation()
-			vpa.UpdateRecommendation(getCappedRecommendation(vpa.ID, resources, observedVpa.Spec.ResourcePolicy))
+		had := vpa.HasRecommendation()
+		vpa.UpdateRecommendation(getCappedRecommendation(vpa.ID, resources, observedVpa.Spec.ResourcePolicy))
 
-			if vpa.HasRecommendation() && !had {
-				metrics_recommender.ObserveRecommendationLatency(vpa.Created)
-			}
-			hasMatchingPods := vpa.PodCount > 0
-			vpa.UpdateConditions(hasMatchingPods)
-			if err := r.clusterState.RecordRecommendation(vpa, time.Now()); err != nil {
-				klog.Warningf("%v", err)
-				klog.V(4).Infof("VPA dump")
-				klog.V(4).Infof("%+v", vpa)
-				klog.V(4).Infof("HasMatchingPods: %v", hasMatchingPods)
-				klog.V(4).Infof("PodCount: %v", vpa.PodCount)
-				pods := r.clusterState.GetMatchingPods(vpa)
-				klog.V(4).Infof("MatchingPods: %+v", pods)
-				if len(pods) != vpa.PodCount {
-					klog.Errorf("ClusterState pod count and matching pods disagree for vpa %v/%v", vpa.ID.Namespace, vpa.ID.VpaName)
-				}
-			}
-			cnt.Add(vpa)
-
-			_, err := UpdateVpaIfNeeded(
-				r.vpaClient.VerticalPodAutoscalers(vpa.ID.Namespace), vpa.ID.VpaName, vpa.AsStatus(), &observedVpa.Status, model.GetAggregationsConfig().UpdateVpaStatus)
-			if err != nil {
-				klog.Errorf(
-					"Cannot update VPA %v object. Reason: %+v", vpa.ID.VpaName, err)
+		if vpa.HasRecommendation() && !had {
+			metrics_recommender.ObserveRecommendationLatency(vpa.Created)
+		}
+		hasMatchingPods := vpa.PodCount > 0
+		vpa.UpdateConditions(hasMatchingPods)
+		if err := r.clusterState.RecordRecommendation(vpa, time.Now()); err != nil {
+			klog.Warningf("%v", err)
+			klog.V(4).Infof("VPA dump")
+			klog.V(4).Infof("%+v", vpa)
+			klog.V(4).Infof("HasMatchingPods: %v", hasMatchingPods)
+			klog.V(4).Infof("PodCount: %v", vpa.PodCount)
+			pods := r.clusterState.GetMatchingPods(vpa)
+			klog.V(4).Infof("MatchingPods: %+v", pods)
+			if len(pods) != vpa.PodCount {
+				klog.Errorf("ClusterState pod count and matching pods disagree for vpa %v/%v", vpa.ID.Namespace, vpa.ID.VpaName)
 			}
 		}
+		cnt.Add(vpa)
+
+		_, err := UpdateVpaIfNeeded(
+			r.vpaClient.VerticalPodAutoscalers(vpa.ID.Namespace), vpa.ID.VpaName, vpa.AsStatus(), &observedVpa.Status, model.GetAggregationsConfig().UpdateVpaStatus)
+		if err != nil {
+			klog.Errorf(
+				"Cannot update VPA %v object. Reason: %+v", vpa.ID.VpaName, err)
+		}
+
 	}
 }
 
@@ -226,6 +223,7 @@ func getCappedRecommendation(vpaID model.VpaID, resources logic.RecommendedPodRe
 	}
 	recommendation := &vpa_types.RecommendedPodResources{containerResources}
 	cappedRecommendation, err := vpa_utils.ApplyVPAPolicy(recommendation, policy)
+
 	if err != nil {
 		klog.Errorf("Failed to apply policy for VPA %v/%v: %v", vpaID.Namespace, vpaID.VpaName, err)
 		return recommendation
