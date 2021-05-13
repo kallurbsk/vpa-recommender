@@ -289,8 +289,9 @@ func (a *AggregateContainerState) addCPULocalMaxima(sample *ContainerUsageSample
 
 	// thresholdMonitorTimeWindow = 30 * time.Minute by default
 	diffDuration := time.Now().Sub(a.LastCPULocalMaximaRecordedTime)
-	// reset CPU Local Maxima Request and Usage
+
 	if diffDuration > a.TimeWindowForLocalMaxima {
+		// reset CPU Local Maxima Request and Usage
 		a.LastCtrCPULocalMaxima.Usage = 0
 		a.LastCtrCPULocalMaxima.Request = 0
 		a.LastCtrCPULocalMaxima.MeasureStart = time.Time{}
@@ -315,11 +316,14 @@ func (a *AggregateContainerState) addMemoryLocalMaxima(sample *ContainerUsageSam
 
 	// thresholdMonitorTimeWindow = 30 * time.Minute by default
 	diffDuration := time.Now().Sub(a.LastMemLocalMaximaRecordedTime)
+
 	if diffDuration > a.TimeWindowForLocalMaxima {
+		// reset Memory Local Maxima Request and Usage
 		a.LastCtrMemoryLocalMaxima.Usage = 0
 		a.LastCtrMemoryLocalMaxima.Request = 0
 		a.LastCtrMemoryLocalMaxima.MeasureStart = time.Time{}
 		a.LastCtrMemoryLocalMaxima.Resource = sample.Resource
+		a.LastMemLocalMaximaRecordedTime = time.Now()
 	} else {
 		// assign LastCtrCPULocalMaxima if only it is less than current memory usage
 		if BytesFromMemoryAmount(a.LastCtrMemoryLocalMaxima.Usage) < memoryUsage {
