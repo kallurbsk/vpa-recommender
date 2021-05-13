@@ -43,12 +43,12 @@ type AggregationsConfig struct {
 	// ThresholdScaleUp is the scale up value multiple of the current usage of resource
 	// below which the scale value is not altered
 	ThresholdScaleUp float64
-	// ScaleDownSafetyMargin is the scale down safety lower margin of the current usage
+	// ScaleDownSafetyFactor is the scale down safety lower margin of the current usage
 	// which will act as the least value recommended during scale down
-	ScaleDownSafetyMargin float64
-	// ScaleUpValue is the actual multiple by which the scale up recommendation of the
+	ScaleDownSafetyFactor float64
+	// ScaleUpFactor is the actual multiple by which the scale up recommendation of the
 	// resource based on current usage is recommended
-	ScaleUpValue float64
+	ScaleUpFactor float64
 	// ThresholdNumCrashes is the minimum number of crashes that is withstood before doubling
 	// both CPU and Memory resource based on the current usage
 	ThresholdNumCrashes int
@@ -66,13 +66,13 @@ const (
 	// DefaultThresholdMonitorTimeWindow is the default time window to get local maxima of CPU and memory usage till the curren time
 	DefaultThresholdMonitorTimeWindow = time.Minute * 30
 	// DefaultThresholdScaleUp is the default threshold value beyond which VPA scale up should kick in
-	DefaultThresholdScaleUp = 0.75
+	DefaultThresholdScaleUp = 0.7
 	// DefaultThresholdScaleDown is the default threshold value beyond which VPA scale down should kick in
-	DefaultThresholdScaleDown = 0.25
-	// DefaultScaleDownSafetyMargin is the default factor by which VPA recommender should suggest scale down based on current usage
-	DefaultScaleDownSafetyMargin = 1.2
-	// DefaultScaleUpMultiple is the default scaling factor which needs to applied for resource scale up
-	DefaultScaleUpMultiple = 2.0
+	DefaultThresholdScaleDown = 0.3
+	// DefaultScaleDownSafetyFactor is the default factor by which VPA recommender should suggest scale down based on current usage
+	DefaultScaleDownSafetyFactor = 1.2
+	// DefaultScaleUpFactor is the default scaling factor which needs to applied for resource scale up
+	DefaultScaleUpFactor = 2.0
 	// DefaultThresholdNumCrashes is the default total number of crashes to withstand before doubling both CPU and memory irrespective of usage
 	DefaultThresholdNumCrashes = 3
 	// UpdateVpaStatus is set to false by default. This enables read only mode for the VPA recommender and prevents updating details in status
@@ -91,8 +91,8 @@ func NewAggregationsConfig(
 	thresholdMonitorTimeWindow time.Duration,
 	thresholdScaleUp float64,
 	thresholdScaleDown float64,
-	scaleDownSafetyMargin float64,
-	scaleUpValue float64,
+	ScaleDownSafetyFactor float64,
+	ScaleUpFactor float64,
 	thresholdNumCrashes int,
 	updateVpaStatus bool) *AggregationsConfig {
 
@@ -102,8 +102,8 @@ func NewAggregationsConfig(
 		ThresholdMonitorTimeWindow:   thresholdMonitorTimeWindow,
 		ThresholdScaleUp:             thresholdScaleUp,
 		ThresholdScaleDown:           thresholdScaleDown,
-		ScaleDownSafetyMargin:        scaleDownSafetyMargin,
-		ScaleUpValue:                 scaleUpValue,
+		ScaleDownSafetyFactor:        ScaleDownSafetyFactor,
+		ScaleUpFactor:                ScaleUpFactor,
 		ThresholdNumCrashes:          thresholdNumCrashes,
 		UpdateVpaStatus:              updateVpaStatus,
 	}
@@ -116,7 +116,7 @@ var aggregationsConfig *AggregationsConfig
 // GetAggregationsConfig gets the aggregations config. Initializes to default values if not initialized already.
 func GetAggregationsConfig() *AggregationsConfig {
 	if aggregationsConfig == nil {
-		aggregationsConfig = NewAggregationsConfig(DefaultMemoryAggregationInterval, DefaultDaysToPreserveContainerState, DefaultThresholdMonitorTimeWindow, DefaultThresholdScaleUp, DefaultThresholdScaleDown, DefaultScaleDownSafetyMargin, DefaultScaleUpMultiple, DefaultThresholdNumCrashes, DefaultUpdateVpaStatus)
+		aggregationsConfig = NewAggregationsConfig(DefaultMemoryAggregationInterval, DefaultDaysToPreserveContainerState, DefaultThresholdMonitorTimeWindow, DefaultThresholdScaleUp, DefaultThresholdScaleDown, DefaultScaleDownSafetyFactor, DefaultScaleUpFactor, DefaultThresholdNumCrashes, DefaultUpdateVpaStatus)
 	}
 
 	return aggregationsConfig

@@ -107,25 +107,37 @@ func (e *constEstimator) GetResourceEstimation(s *model.AggregateContainerState)
 }
 
 func (e *marginEstimator) GetResourceEstimation(s *model.AggregateContainerState) (model.Resources, bool) {
-	originalResources, _ := e.baseEstimator.GetResourceEstimation(s)
-	newResources := make(model.Resources)
-	for resource, resourceAmount := range originalResources {
-		margin := model.ScaleResource(resourceAmount, e.marginFraction)
-		newResources[resource] = originalResources[resource] + margin
+	originalResources, toScale := e.baseEstimator.GetResourceEstimation(s)
+
+	if toScale {
+		newResources := make(model.Resources)
+		for resource, resourceAmount := range originalResources {
+			margin := model.ScaleResource(resourceAmount, e.marginFraction)
+			newResources[resource] = originalResources[resource] + margin
+		}
+		return newResources, true
 	}
-	return newResources, true
+
+	return originalResources, false
+
 }
 
 func (e *minResourcesEstimator) GetResourceEstimation(s *model.AggregateContainerState) (model.Resources, bool) {
-	originalResources, _ := e.baseEstimator.GetResourceEstimation(s)
-	newResources := make(model.Resources)
-	for resource, resourceAmount := range originalResources {
-		if resourceAmount < e.minResources[resource] {
-			resourceAmount = e.minResources[resource]
+	originalResources, toScale := e.baseEstimator.GetResourceEstimation(s)
+
+	if toScale {
+		newResources := make(model.Resources)
+		for resource, resourceAmount := range originalResources {
+			if resourceAmount < e.minResources[resource] {
+				resourceAmount = e.minResources[resource]
+			}
+			newResources[resource] = resourceAmount
 		}
-		newResources[resource] = resourceAmount
+
+		return newResources, true
 	}
-	return newResources, true
+
+	return originalResources, false
 }
 
 func getScaleValue(s *model.AggregateContainerState) (float64, float64) {
@@ -148,28 +160,30 @@ func getScaleValue(s *model.AggregateContainerState) (float64, float64) {
 
 	if s.RestartBudget <= 0 || s.CurrentContainerState.Reason == crashLoopBackOff {
 		s.RestartBudget = model.DefaultThresholdNumCrashes
-		memScaleValue = s.ScaleUpValue
-		cpuScaleValue = s.ScaleUpValue
+		memScaleValue = s.ScaleUpFactor
+		cpuScaleValue = s.ScaleUpFactor
+		klog.Infof("Doubling CPU and Memory: CPU Scale = %v, Memory Scale = %v", cpuScaleValue, memScaleValue)
 		return cpuScaleValue, memScaleValue
 	}
 
-	if currentCPURequestLowerThreshold < float64(currentCPUUsage.Usage) && float64(currentCPUUsage.Usage) < currentCPURequestUpperThreshold { // No Scale
+	maxOfCurrentCPUAndLocalMaxima := math.Max(float64(currentCPUUsage.Usage), float64(cpuLocalMaxima.Usage))
+	if float64(currentCPUUsage.Usage) > currentCPURequestUpperThreshold { // Scale Up
+		cpuScaleValue = s.ScaleUpFactor
+	} else if maxOfCurrentCPUAndLocalMaxima < float64(currentCPURequestLowerThreshold) { // Scale Down
+		cpuScaleValue = s.ScaleDownSafetyFactor
+	} else { // No Scale
 		cpuScaleValue = 1.0
-	} else if math.Max(float64(currentCPUUsage.Usage), float64(currentCPUUsage.Request)) > currentCPURequestUpperThreshold { // Scale Up
-		cpuScaleValue = s.ScaleUpValue
-	} else if math.Max(float64(currentCPUUsage.Usage), float64(cpuLocalMaxima.Usage)) < float64(currentCPURequestLowerThreshold) { // Scale Down
-		cpuScaleValue = s.ScaleDownSafetyMargin
 	}
 
-	if currentMemRequestLowerThreshold < float64(currentMemUsage.Usage) && float64(currentMemUsage.Usage) < currentMemRequestUpperThreshold { // No Scale
+	maxOfCurrentMemAndLocalMaxima := math.Max(float64(currentMemUsage.Usage), float64(memLocalMaxima.Usage))
+	if float64(currentMemUsage.Usage) > currentMemRequestUpperThreshold { // Scale Up
+		memScaleValue = s.ScaleUpFactor
+	} else if maxOfCurrentMemAndLocalMaxima < float64(currentMemRequestLowerThreshold) { // Scale Down
+		memScaleValue = s.ScaleDownSafetyFactor
+	} else { // No Scale
 		memScaleValue = 1.0
-	} else if math.Max(float64(currentMemUsage.Usage), float64(currentMemUsage.Request)) > currentMemRequestUpperThreshold { // Scale Up
-		memScaleValue = s.ScaleUpValue
-	} else if math.Max(float64(currentMemUsage.Usage), float64(memLocalMaxima.Usage)) < float64(currentMemRequestLowerThreshold) { // Scale Down
-		memScaleValue = s.ScaleDownSafetyMargin
 	}
 
-	klog.Infof("CPU Scale = %v, Memory Scale = %v", cpuScaleValue, memScaleValue)
 	return cpuScaleValue, memScaleValue
 }
 

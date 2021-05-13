@@ -118,8 +118,8 @@ type AggregateContainerState struct {
 	TotalMemorySamplesCount        int
 	ThresholdScaleDown             float64
 	ThresholdScaleUp               float64
-	ScaleDownSafetyMargin          float64
-	ScaleUpValue                   float64
+	ScaleDownSafetyFactor          float64
+	ScaleUpFactor                  float64
 }
 
 // GetLastRecommendation returns last recorded recommendation.
@@ -231,8 +231,8 @@ func NewAggregateContainerState() *AggregateContainerState {
 		TimeWindowForLocalMaxima:       config.ThresholdMonitorTimeWindow,
 		ThresholdScaleDown:             config.ThresholdScaleDown,
 		ThresholdScaleUp:               config.ThresholdScaleUp,
-		ScaleDownSafetyMargin:          config.ScaleDownSafetyMargin,
-		ScaleUpValue:                   config.ScaleUpValue,
+		ScaleDownSafetyFactor:          config.ScaleDownSafetyFactor,
+		ScaleUpFactor:                  config.ScaleUpFactor,
 		RestartBudget:                  config.ThresholdNumCrashes,
 		CurrentCtrCPUUsage:             currentCtrCPUUsage,
 		CurrentCtrMemUsage:             currentCtrMemUsage,
@@ -295,7 +295,7 @@ func (a *AggregateContainerState) addCPULocalMaxima(sample *ContainerUsageSample
 		a.LastCtrCPULocalMaxima.Request = 0
 		a.LastCtrCPULocalMaxima.MeasureStart = time.Time{}
 		a.LastCtrCPULocalMaxima.Resource = sample.Resource
-
+		a.LastCPULocalMaximaRecordedTime = time.Now()
 	} else {
 		// assign LastCtrCPULocalMaxima if only it is less than current CPU usage
 		if CoresFromCPUAmount(a.LastCtrCPULocalMaxima.Usage) < cpuUsageCores {

@@ -58,20 +58,20 @@ var (
 	ctrNameLabel        = flag.String("container-name-label", "name", `Label name to look for container names`)
 	vpaObjectNamespace  = flag.String("vpa-object-namespace", apiv1.NamespaceAll, "Namespace to search for VPA objects and pod stats. Empty means all namespaces will be used.")
 	// VPA Recommender configurations
-	scaleDownSafetyMargin = flag.Float64("scale-down-safety-margin", 1.2, `Factor by which VPA recommender should suggest scale down based on current usage`)
-	thresholdScaleUp      = flag.Float64("threshold-scale-up", 0.75, "threshold value beyond which VPA scale up should kick in")
-	thresholdScaleDown    = flag.Float64("threshold-scale-down", 0.3, "threshold value below which VPA scale down should kick in")
-	updateVpaStatus       = flag.Bool("update-vpa-status", false, "If the VPA status should not be updated but kept as read only set to false else true")
-	allowOutsideClient    = flag.Bool("allow-outside-client", false, "Allowing the cluster access to run recommender from outside the cluster")
+	scaleDownSafetyFactor      = flag.Float64("scale-down-safety-factor", model.DefaultScaleDownSafetyFactor, `Factor by which VPA recommender should suggest scale down based on current usage`)
+	scaleUpFactor              = flag.Float64("scale-up-factor", model.DefaultScaleUpFactor, "Scaling factor which needs to applied for resource scale up")
+	thresholdMonitorTimeWindow = flag.Duration("threshold-monitor-time-window", 30*time.Minute, `Time window to get local maxima of CPU and memory usage till the curren time`)
+	thresholdNumCrashes        = flag.Int("threshold-num-crashes", model.DefaultThresholdNumCrashes, "Total number of crashes to withstand before doubling both CPU and memory irrespective of usage")
+	thresholdScaleUp           = flag.Float64("threshold-scale-up", model.DefaultThresholdScaleUp, "threshold value beyond which VPA scale up should kick in")
+	thresholdScaleDown         = flag.Float64("threshold-scale-down", model.DefaultThresholdScaleDown, "threshold value below which VPA scale down should kick in")
+	updateVpaStatus            = flag.Bool("update-vpa-status", false, "If the VPA status should not be updated but kept as read only set to false else true")
+	allowOutsideClient         = flag.Bool("allow-outside-client", false, "Allowing the cluster access to run recommender from outside the cluster")
 )
 
 // Aggregation configuration flags
 var (
 	memoryAggregationInterval    = flag.Duration("memory-aggregation-interval", model.DefaultMemoryAggregationInterval, `The length of the interval for which the current aggregate container state has to be kept alive`)
 	daysToPreserveContainerState = flag.Int64("days-to-preserve-container-state", model.DefaultDaysToPreserveContainerState, `Total number of days for which the recorded aggregate container state has to be kept alive`)
-	thresholdMonitorTimeWindow   = flag.Duration("threshold-monitor-time-window", 30*time.Minute, `Time window to get local maxima of CPU and memory usage till the curren time`)
-	scaleUpMultiple              = flag.Float64("scale-up-multiple", model.DefaultScaleUpMultiple, "Scaling factor which needs to applied for resource scale up")
-	thresholdNumCrashes          = flag.Int("threshold-num-crashes", model.DefaultThresholdNumCrashes, "Total number of crashes to withstand before doubling both CPU and memory irrespective of usage")
 )
 
 func main() {
@@ -88,8 +88,8 @@ func main() {
 			*thresholdMonitorTimeWindow,
 			*thresholdScaleUp,
 			*thresholdScaleDown,
-			*scaleDownSafetyMargin,
-			*scaleUpMultiple,
+			*scaleDownSafetyFactor,
+			*scaleUpFactor,
 			*thresholdNumCrashes,
 			*updateVpaStatus))
 

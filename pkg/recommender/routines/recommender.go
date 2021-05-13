@@ -223,7 +223,6 @@ func getCappedRecommendation(vpaID model.VpaID, resources logic.RecommendedPodRe
 	}
 	recommendation := &vpa_types.RecommendedPodResources{containerResources}
 	cappedRecommendation, err := vpa_utils.ApplyVPAPolicy(recommendation, policy)
-
 	if err != nil {
 		klog.Errorf("Failed to apply policy for VPA %v/%v: %v", vpaID.Namespace, vpaID.VpaName, err)
 		return recommendation

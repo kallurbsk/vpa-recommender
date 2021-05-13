@@ -128,11 +128,11 @@ func FilterControlledResources(estimation model.Resources, controlledResources [
 // CreatePodResourceRecommender returns the primary recommender.
 func CreatePodResourceRecommender() PodResourceRecommender {
 	config := model.GetAggregationsConfig()
-	targetCPUFactor := config.ScaleUpValue
+	targetCPUFactor := config.ScaleUpFactor
 	lowerBoundCPUFactor := targetCPUFactor / 2.0
 	upperBoundCPUFactor := 2.0 * targetCPUFactor
 
-	targetMemoryFactor := config.ScaleUpValue
+	targetMemoryFactor := config.ScaleUpFactor
 	lowerBoundMemoryFactor := targetMemoryFactor / 2.0
 	upperBoundMemoryFactor := 2.0 * targetMemoryFactor
 
