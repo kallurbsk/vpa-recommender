@@ -65,7 +65,7 @@ type ContainerState struct {
 	// End time of the current memory aggregation interval (not inclusive).
 	WindowEnd time.Time
 	// Start of the latest memory usage sample that was aggregated.
-	lastMemorySampleStart time.Time
+	LastMemorySampleStart time.Time
 	// Aggregation to add usage samples to.
 	aggregator ContainerStateAggregator
 }
@@ -76,7 +76,7 @@ func NewContainerState(request Resources, restartCount int, aggregator Container
 		Request:               request,
 		LastCPUSampleStart:    time.Time{},
 		WindowEnd:             time.Time{},
-		lastMemorySampleStart: time.Time{},
+		LastMemorySampleStart: time.Time{},
 		aggregator:            aggregator,
 		RestartCount:          restartCount,
 	}
@@ -87,7 +87,6 @@ func (sample *ContainerUsageSample) isValid(expectedResource ResourceName) bool 
 }
 
 func (container *ContainerState) addCPUSample(sample *ContainerUsageSample) bool {
-	// Order should not matter for the histogram, other than deduplication.
 	if !sample.isValid(ResourceCPU) || !sample.MeasureStart.After(container.LastCPUSampleStart) {
 		return false // Discard invalid, duplicate or out-of-order samples.
 	}
@@ -137,61 +136,29 @@ func (container *ContainerState) GetMaxMemoryPeak() ResourceAmount {
 }
 
 func (container *ContainerState) addMemorySample(sample *ContainerUsageSample, isOOM bool) bool {
-	ts := sample.MeasureStart
-	// We always process OOM samples.
-	if !sample.isValid(ResourceMemory) ||
-		(!isOOM && ts.Before(container.lastMemorySampleStart)) {
-		return false // Discard invalid or outdated samples.
-	}
-	container.lastMemorySampleStart = ts
-	if container.WindowEnd.IsZero() { // This is the first sample.
-		container.WindowEnd = ts
+	if !sample.isValid(ResourceMemory) || (!isOOM && !sample.MeasureStart.After(container.LastMemorySampleStart)) {
+		return false // Discard invalid, duplicate or out-of-order samples.
 	}
 
-	// Checks if there is a new peak value in memory sample and adds it to the sample of
-	// memory usage collected in aggregate container state. Previously the logic was removing
-	// old peak value from samples bucket and adding new. As we don't maintain a history of samples
-	// anymore, removing sample becomes irrelevant and also just updating the new peak should work
-	addNewPeak := false
-	if ts.Before(container.WindowEnd) {
-		oldMaxMem := container.GetMaxMemoryPeak()
-		if oldMaxMem != 0 && sample.Usage > oldMaxMem {
-			addNewPeak = true
-		}
-	} else {
-		// Shift the memory aggregation window to the next interval.
-		MemoryAggregationInterval := GetAggregationsConfig().MemoryAggregationInterval
-		shift := truncate(ts.Sub(container.WindowEnd), MemoryAggregationInterval) + MemoryAggregationInterval
-		container.WindowEnd = container.WindowEnd.Add(shift)
-		container.memoryPeak = 0
-		container.oomPeak = 0
-		addNewPeak = true
-	}
 	container.observeQualityMetrics(sample.Usage, isOOM, corev1.ResourceMemory)
-	if addNewPeak {
-		newPeak := ContainerUsageSample{
-			MeasureStart: container.WindowEnd,
-			Usage:        sample.Usage,
-			Request:      sample.Request,
-			Resource:     ResourceMemory,
-		}
+	newPeak := ContainerUsageSample{
+		MeasureStart: sample.MeasureStart,
+		Usage:        sample.Usage,
+		Request:      sample.Request,
+		Resource:     ResourceMemory,
+	}
 
-		container.aggregator.AddSample(&newPeak)
-		if isOOM {
-			container.oomPeak = sample.Usage
-		} else {
-			container.memoryPeak = sample.Usage
-		}
+	container.aggregator.AddSample(&newPeak)
+	if isOOM {
+		container.oomPeak = sample.Usage
+	} else {
+		container.memoryPeak = sample.Usage
 	}
 	return true
 }
 
 // RecordOOM adds info regarding OOM event in the model as an artificial memory sample.
 func (container *ContainerState) RecordOOM(timestamp time.Time, requestedMemory ResourceAmount) error {
-	// Discard old OOM
-	if timestamp.Before(container.WindowEnd.Add(-1 * GetAggregationsConfig().MemoryAggregationInterval)) {
-		return fmt.Errorf("OOM event will be discarded - it is too old (%v)", timestamp)
-	}
 	// Get max of the request and the recent usage-based memory peak.
 	// Omitting oomPeak here to protect against recommendation running too high on subsequent OOMs.
 	memoryUsed := ResourceAmountMax(requestedMemory, container.memoryPeak)

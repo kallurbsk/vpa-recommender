@@ -276,17 +276,17 @@ func (feeder *clusterStateFeeder) setVpaCheckpoint(checkpoint *vpa_types.Vertica
 		return fmt.Errorf("cannot load checkpoint details of VPA %v. Reason: %v", vpa.ID, err)
 	}
 
-	localMaximaCPU := vpaData["LocalMaximaCPU"].(map[string]interface{})
-	cs.LastCtrCPULocalMaxima.MeasureStart, _ = time.Parse("0001-01-01T00:00:00Z", localMaximaCPU["MeasureStart"].(string))
-	cs.LastCtrCPULocalMaxima.Request = model.ResourceAmount(localMaximaCPU["Request"].(float64))
-	cs.LastCtrCPULocalMaxima.Usage = model.ResourceAmount(localMaximaCPU["Usage"].(float64))
-	cs.LastCtrCPULocalMaxima.Resource = model.ResourceName(localMaximaCPU["Resource"].(string))
+	// localMaximaCPU := vpaData["LocalMaximaCPU"].(map[string]interface{})
+	// cs.LastCtrCPULocalMaxima.MeasureStart, _ = time.Parse("0001-01-01T00:00:00Z", localMaximaCPU["MeasureStart"].(string))
+	// cs.LastCtrCPULocalMaxima.Request = model.ResourceAmount(localMaximaCPU["Request"].(float64))
+	// cs.LastCtrCPULocalMaxima.Usage = model.ResourceAmount(localMaximaCPU["Usage"].(float64))
+	// cs.LastCtrCPULocalMaxima.Resource = model.ResourceName(localMaximaCPU["Resource"].(string))
 
-	localMaximaMemory := vpaData["LocalMaximaMemory"].(map[string]interface{})
-	cs.LastCtrMemoryLocalMaxima.MeasureStart, _ = time.Parse("0001-01-01T00:00:00Z", localMaximaMemory["MeasureStart"].(string))
-	cs.LastCtrMemoryLocalMaxima.Request = model.ResourceAmount(localMaximaMemory["Request"].(float64))
-	cs.LastCtrMemoryLocalMaxima.Usage = model.ResourceAmount(localMaximaMemory["Usage"].(float64))
-	cs.LastCtrMemoryLocalMaxima.Resource = model.ResourceName(localMaximaMemory["Resource"].(string))
+	// localMaximaMemory := vpaData["LocalMaximaMemory"].(map[string]interface{})
+	// cs.LastCtrMemoryLocalMaxima.MeasureStart, _ = time.Parse("0001-01-01T00:00:00Z", localMaximaMemory["MeasureStart"].(string))
+	// cs.LastCtrMemoryLocalMaxima.Request = model.ResourceAmount(localMaximaMemory["Request"].(float64))
+	// cs.LastCtrMemoryLocalMaxima.Usage = model.ResourceAmount(localMaximaMemory["Usage"].(float64))
+	// cs.LastCtrMemoryLocalMaxima.Resource = model.ResourceName(localMaximaMemory["Resource"].(string))
 
 	cs.LastCPULocalMaximaRecordedTime, _ = time.Parse("0001-01-01T00:00:00Z", vpaData["LastCPULocalMaximaRecordedTime"].(string))
 	cs.LastMemLocalMaximaRecordedTime, _ = time.Parse("0001-01-01T00:00:00Z", vpaData["LastMemLocalMaximaRecordedTime"].(string))

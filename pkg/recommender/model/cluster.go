@@ -124,7 +124,8 @@ func (cluster *ClusterState) AddOrUpdatePod(PodID PodID, newLabels labels.Set, p
 	}
 
 	newlabelSetKey := cluster.getLabelSetKey(newLabels)
-	if podExists && pod.labelSetKey != newlabelSetKey {
+	//if podExists && pod.labelSetKey != newlabelSetKey {
+	if pod.labelSetKey != newlabelSetKey {
 		// This Pod is already counted in the old VPA, remove the link.
 		cluster.removePodFromItsVpa(pod)
 	}
@@ -197,6 +198,7 @@ func (cluster *ClusterState) AddOrUpdateContainer(containerID ContainerID, reque
 		pod.Containers[containerID.ContainerName] = NewContainerState(request, restartCount, NewContainerStateAggregatorProxy(cluster, containerID))
 		restartBudget := acs.RestartBudget - (restartCount - acs.LastSeenRestartCount)
 		pod.Containers[containerID.ContainerName].RecordRestartCount(restartCount, restartBudget)
+		pod.Containers[containerID.ContainerName].aggregator.SetCurrentContainerState(curState)
 		if acs.CurrentCtrCPUUsage.Request == 0 {
 			acs.CurrentCtrCPUUsage.Request = request[ResourceCPU]
 		}
@@ -207,7 +209,6 @@ func (cluster *ClusterState) AddOrUpdateContainer(containerID ContainerID, reque
 		// Container aleady exists. Possibly update the request.
 		container.Request = request
 		container.RecordRestartCount(restartCount, restartCount-acs.LastSeenRestartCount)
-		// container.RecordReadiness(ready)
 		container.aggregator.SetCurrentContainerState(curState)
 	}
 
@@ -338,9 +339,15 @@ func (cluster *ClusterState) MakeAggregateStateKey(pod *PodState, containerName 
 // The pod with the corresponding PodID must already be present in the ClusterState.
 func (cluster *ClusterState) aggregateStateKeyForContainerID(containerID ContainerID) AggregateStateKey {
 	pod, podExists := cluster.Pods[containerID.PodID]
+
 	if !podExists {
-		panic(fmt.Sprintf("Pod not present in the ClusterState: %v", containerID.PodID))
+		panic(fmt.Sprintf("Pod not present or terminating in the ClusterState: %v", containerID.PodID))
 	}
+
+	// var aggregateStateKey AggregateStateKey
+	// if pod.Phase == "Running" {
+	// 	aggregateStateKey = cluster.MakeAggregateStateKey(pod, containerID.ContainerName)
+	// }
 	return cluster.MakeAggregateStateKey(pod, containerID.ContainerName)
 }
 
@@ -371,9 +378,9 @@ func (cluster *ClusterState) GarbageCollectAggregateCollectionStates(now time.Ti
 	klog.V(1).Info("Garbage collection of AggregateCollectionStates triggered")
 	keysToDelete := make([]AggregateStateKey, 0)
 	activeKeys := cluster.getActiveAggregateStateKeys()
-	for key, aggregateContainerState := range cluster.aggregateStateMap {
+	for key, _ := range cluster.aggregateStateMap {
 		isKeyActive := activeKeys[key]
-		if !isKeyActive && aggregateContainerState.isExpired(now) {
+		if !isKeyActive {
 			keysToDelete = append(keysToDelete, key)
 			klog.V(1).Infof("Removing expired AggregateCollectionState for %+v", key)
 		}
@@ -390,7 +397,7 @@ func (cluster *ClusterState) getActiveAggregateStateKeys() map[AggregateStateKey
 	activeKeys := map[AggregateStateKey]bool{}
 	for _, pod := range cluster.Pods {
 		// Pods that will not run anymore are considered inactive.
-		if pod.Phase == apiv1.PodSucceeded || pod.Phase == apiv1.PodFailed {
+		if pod.Phase != apiv1.PodRunning || pod.Phase == apiv1.PodSucceeded || pod.Phase == apiv1.PodFailed {
 			continue
 		}
 		for container := range pod.Containers {

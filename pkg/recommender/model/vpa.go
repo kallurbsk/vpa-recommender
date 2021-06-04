@@ -186,6 +186,8 @@ func (vpa *Vpa) MergeCheckpointedState(aggregateContainerStateMap ContainerNameT
 			aggregateContainerStateMap[containerName] = aggregateContainerState
 		}
 		aggregateContainerState.MergeContainerState(aggregation)
+		// Delete the checkpoint details in this VPA after the first merge
+		delete(vpa.ContainersInitialAggregateState, containerName)
 	}
 }
 

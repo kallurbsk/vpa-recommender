@@ -49,7 +49,7 @@ import (
 )
 
 // AggregateContainerStateGCInterval defines how often expired AggregateContainerStates are garbage collected.
-const AggregateContainerStateGCInterval = 1 * time.Hour
+const AggregateContainerStateGCInterval = 3 * time.Minute
 
 var (
 	checkpointsWriteTimeout = flag.Duration("checkpoints-timeout", time.Minute, `Timeout for writing checkpoints since the start of the recommender's main loop`)

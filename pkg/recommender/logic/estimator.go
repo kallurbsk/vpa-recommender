@@ -183,27 +183,27 @@ func getScaleValue(s *model.AggregateContainerState) (float64, float64) {
 	} else { // No Scale
 		memScaleValue = 1.0
 	}
-
+	klog.Infof("CPU Scale = %v, Memory Scale = %v", cpuScaleValue, memScaleValue)
 	return cpuScaleValue, memScaleValue
 }
 
 func (e *scaledResourceEstimator) GetResourceEstimation(s *model.AggregateContainerState) (model.Resources, bool) {
 
-	cpuUsage := s.CurrentCtrCPUUsage
-	memUsage := s.CurrentCtrMemUsage
+	currentCPU := s.CurrentCtrCPUUsage
+	currentMem := s.CurrentCtrMemUsage
 	originalResources := model.Resources{
-		model.ResourceCPU:    cpuUsage.Usage,
-		model.ResourceMemory: memUsage.Usage,
+		model.ResourceCPU:    currentCPU.Usage,
+		model.ResourceMemory: currentMem.Usage,
 	}
 
-	// If cpuUsage or memUsage setting original resources above is 0 due to Crash Loop Back Off,
+	// If currentCPU or currentMem setting original resources above is 0 due to Crash Loop Back Off,
 	// then set the corresponding resource to the max(usage, requests) of that resource.
 	if s.CurrentContainerState.Reason == crashLoopBackOff {
-		originalResources[model.ResourceCPU] = model.ResourceAmount(math.Max(float64(cpuUsage.Request), float64(cpuUsage.Usage)))
+		originalResources[model.ResourceCPU] = model.ResourceAmount(math.Max(float64(currentCPU.Request), float64(currentCPU.Usage)))
 	}
 
 	if s.CurrentContainerState.Reason == crashLoopBackOff {
-		originalResources[model.ResourceMemory] = model.ResourceAmount(math.Max(float64(memUsage.Request), float64(memUsage.Usage)))
+		originalResources[model.ResourceMemory] = model.ResourceAmount(math.Max(float64(currentMem.Request), float64(currentMem.Usage)))
 	}
 
 	scaledResources := make(model.Resources)
@@ -216,14 +216,25 @@ func (e *scaledResourceEstimator) GetResourceEstimation(s *model.AggregateContai
 
 	for resource, resourceAmount := range originalResources {
 		scaleValue := 0.0
-		if resource == "cpu" {
-			scaleValue = cpuScale
-		} else if resource == "memory" {
-			scaleValue = memScale
-		}
 		scaledResources[resource] = originalResources[resource]
 
-		if scaleValue > float64(1.0) {
+		if resource == "cpu" {
+			scaleValue = cpuScale
+			// If CPU recommendation is 1.0 current CPU request is already doing better
+			// No need to change the resource value again based on current usage
+			if scaleValue == 1.0 {
+				scaledResources[resource] = currentCPU.Request
+			}
+		} else if resource == "memory" {
+			scaleValue = memScale
+			// If memory recommendation is 1.0 current memory request is already doing better
+			// No need to change the resource value again based on current usage
+			if scaleValue == 1.0 {
+				scaledResources[resource] = currentMem.Request
+			}
+		}
+
+		if scaleValue > 1.0 { // Scale Up or Down
 			scaledResources[resource] = model.ScaleResource(resourceAmount, scaleValue)
 		}
 	}

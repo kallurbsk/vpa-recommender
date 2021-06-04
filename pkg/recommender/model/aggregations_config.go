@@ -29,10 +29,10 @@ type AggregationsConfig struct {
 	// interval).
 	// Currently it is used as more of a counter for keeping the aggregate container state
 	// relevant with the amount of samples gone in
-	MemoryAggregationInterval time.Duration
+	// MemoryAggregationInterval time.Duration
 	// DaysToPreserveContainerState is the total number of days to preserve the
 	// aggregate container state
-	DaysToPreserveContainerState int64
+	// DaysToPreserveContainerState int64
 	// ThresholdMonitorTimeWindow is the time window for setting the local maxima of usage
 	// of resources. This window helps in calculating a local maxima within it for a given
 	// resource which inturn is used during the scale down to not recommend resources below it
@@ -58,11 +58,6 @@ type AggregationsConfig struct {
 }
 
 const (
-	// DefaultDaysToPreserveContainerState is the default value for DaysToPreserveContainerState.
-	DefaultDaysToPreserveContainerState = 8
-	// DefaultMemoryAggregationInterval is the default value for MemoryAggregationInterval.
-	// which the peak memory usage is computed.
-	DefaultMemoryAggregationInterval = time.Hour * 24
 	// DefaultThresholdMonitorTimeWindow is the default time window to get local maxima of CPU and memory usage till the curren time
 	DefaultThresholdMonitorTimeWindow = time.Minute * 30
 	// DefaultThresholdScaleUp is the default threshold value beyond which VPA scale up should kick in
@@ -80,14 +75,14 @@ const (
 )
 
 // GetMemoryAggregationWindowLength returns the total length of the memory usage history aggregated by VPA.
-func (a *AggregationsConfig) GetMemoryAggregationWindowLength() time.Duration {
-	return a.MemoryAggregationInterval * time.Duration(a.DaysToPreserveContainerState)
-}
+// func (a *AggregationsConfig) GetMemoryAggregationWindowLength() time.Duration {
+// 	return a.MemoryAggregationInterval * time.Duration(a.DaysToPreserveContainerState)
+// }
 
 // NewAggregationsConfig creates a new AggregationsConfig based on the supplied parameters and default values.
 func NewAggregationsConfig(
-	MemoryAggregationInterval time.Duration,
-	DaysToPreserveContainerState int64,
+	//MemoryAggregationInterval time.Duration,
+	//DaysToPreserveContainerState int64,
 	thresholdMonitorTimeWindow time.Duration,
 	thresholdScaleUp float64,
 	thresholdScaleDown float64,
@@ -97,15 +92,15 @@ func NewAggregationsConfig(
 	updateVpaStatus bool) *AggregationsConfig {
 
 	a := &AggregationsConfig{
-		MemoryAggregationInterval:    MemoryAggregationInterval,
-		DaysToPreserveContainerState: DaysToPreserveContainerState,
-		ThresholdMonitorTimeWindow:   thresholdMonitorTimeWindow,
-		ThresholdScaleUp:             thresholdScaleUp,
-		ThresholdScaleDown:           thresholdScaleDown,
-		ScaleDownSafetyFactor:        ScaleDownSafetyFactor,
-		ScaleUpFactor:                ScaleUpFactor,
-		ThresholdNumCrashes:          thresholdNumCrashes,
-		UpdateVpaStatus:              updateVpaStatus,
+		// MemoryAggregationInterval:    MemoryAggregationInterval,
+		// DaysToPreserveContainerState: DaysToPreserveContainerState,
+		ThresholdMonitorTimeWindow: thresholdMonitorTimeWindow,
+		ThresholdScaleUp:           thresholdScaleUp,
+		ThresholdScaleDown:         thresholdScaleDown,
+		ScaleDownSafetyFactor:      ScaleDownSafetyFactor,
+		ScaleUpFactor:              ScaleUpFactor,
+		ThresholdNumCrashes:        thresholdNumCrashes,
+		UpdateVpaStatus:            updateVpaStatus,
 	}
 
 	return a
@@ -116,7 +111,8 @@ var aggregationsConfig *AggregationsConfig
 // GetAggregationsConfig gets the aggregations config. Initializes to default values if not initialized already.
 func GetAggregationsConfig() *AggregationsConfig {
 	if aggregationsConfig == nil {
-		aggregationsConfig = NewAggregationsConfig(DefaultMemoryAggregationInterval, DefaultDaysToPreserveContainerState, DefaultThresholdMonitorTimeWindow, DefaultThresholdScaleUp, DefaultThresholdScaleDown, DefaultScaleDownSafetyFactor, DefaultScaleUpFactor, DefaultThresholdNumCrashes, DefaultUpdateVpaStatus)
+		aggregationsConfig = NewAggregationsConfig(DefaultThresholdMonitorTimeWindow, DefaultThresholdScaleUp, DefaultThresholdScaleDown, DefaultScaleDownSafetyFactor, DefaultScaleUpFactor, DefaultThresholdNumCrashes, DefaultUpdateVpaStatus)
+
 	}
 
 	return aggregationsConfig
