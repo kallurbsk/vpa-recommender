@@ -1,0 +1,46 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: compute
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: compute
+  template:
+    metadata:
+      labels:
+        app: compute
+    spec:
+      containers:
+      - name: compute
+        image: progrium/stress
+        command: [ "/usr/bin/stress", "--verbose", "--backoff", "0", "--vm", "1", "--vm-bytes", "512M", "--vm-hang", "1" ]
+        resources:
+          requests:
+            memory: "100M"
+            cpu: "50m"
+          limits:
+            memory: "200M"
+            cpu: "100m"
+       
+---
+apiVersion: autoscaling.k8s.io/v1beta2
+kind: VerticalPodAutoscaler
+metadata:
+  name: compute-vpa
+spec:
+  targetRef:
+    apiVersion: "apps/v1"
+    kind: Deployment
+    name: compute
+  updatePolicy:
+    updateMode: "Auto"
+    resourcePolicy:
+      containerPolicies:
+      - name: '*'
+        maxAllowed:
+          cpu: 4
+          memory: 6Gi
+
