@@ -166,7 +166,14 @@ func getScaleValue(s *model.AggregateContainerState) (float64, float64) {
 		return cpuScaleValue, memScaleValue
 	}
 
-	maxOfCurrentCPUAndLocalMaxima := math.Max(float64(currentCPUUsage.Usage), float64(cpuLocalMaxima.Usage))
+	var maxOfCurrentCPUAndLocalMaxima float64
+	if currentCPUUsage.Usage != 0 {
+		maxOfCurrentCPUAndLocalMaxima = math.Max(float64(currentCPUUsage.Usage), float64(cpuLocalMaxima.Usage))
+	} else {
+		// Handling a case where CPU usage is 0 when the pod has just started or just out of crash loop
+		maxOfCurrentCPUAndLocalMaxima = float64(currentCPUUsage.Request)
+	}
+
 	if float64(currentCPUUsage.Usage) > currentCPURequestUpperThreshold { // Scale Up
 		cpuScaleValue = s.ScaleUpFactor
 	} else if maxOfCurrentCPUAndLocalMaxima < float64(currentCPURequestLowerThreshold) { // Scale Down
@@ -183,6 +190,7 @@ func getScaleValue(s *model.AggregateContainerState) (float64, float64) {
 	} else { // No Scale
 		memScaleValue = 1.0
 	}
+
 	klog.Infof("CPU Scale = %v, Memory Scale = %v", cpuScaleValue, memScaleValue)
 	return cpuScaleValue, memScaleValue
 }

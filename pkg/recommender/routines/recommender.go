@@ -27,29 +27,22 @@ import (
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 
 	"github.com/gardener/vpa-recommender/pkg/recommender/checkpoint"
+	"github.com/gardener/vpa-recommender/pkg/recommender/input"
+	"github.com/gardener/vpa-recommender/pkg/recommender/logic"
 	"github.com/gardener/vpa-recommender/pkg/recommender/model"
+	metrics_recommender "github.com/gardener/vpa-recommender/pkg/utils/metrics/recommender"
+	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	vpa_types "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
 	vpa_clientset "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/client/clientset/versioned"
 	vpa_api "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/client/clientset/versioned/typed/autoscaling.k8s.io/v1"
-
-	// "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/checkpoint"
-
-	// "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input"
-
-	"github.com/gardener/vpa-recommender/pkg/recommender/input"
-	"github.com/gardener/vpa-recommender/pkg/recommender/logic"
-	metrics_recommender "github.com/gardener/vpa-recommender/pkg/utils/metrics/recommender"
-	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	// metrics_recommender "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/metrics/recommender"
 	vpa_utils "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/vpa"
 	"k8s.io/client-go/rest"
 	"k8s.io/klog"
 )
 
 // AggregateContainerStateGCInterval defines how often expired AggregateContainerStates are garbage collected.
-const AggregateContainerStateGCInterval = 3 * time.Minute
+const AggregateContainerStateGCInterval = 60 * time.Minute
 
 var (
 	checkpointsWriteTimeout = flag.Duration("checkpoints-timeout", time.Minute, `Timeout for writing checkpoints since the start of the recommender's main loop`)
@@ -156,7 +149,6 @@ func (r *recommender) UpdateVPAs() {
 	defer cnt.Observe()
 
 	for _, observedVpa := range r.clusterState.ObservedVpas {
-
 		key := model.VpaID{
 			Namespace: observedVpa.Namespace,
 			VpaName:   observedVpa.Name,

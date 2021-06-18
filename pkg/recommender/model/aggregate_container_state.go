@@ -166,17 +166,15 @@ func (a *AggregateContainerState) MarkNotAutoscaled() {
 // MergeContainerState merges two AggregateContainerStates.
 func (a *AggregateContainerState) MergeContainerState(other *AggregateContainerState) {
 
-	// cpuDiffDuration := time.Now().Sub(a.LastCPULocalMaximaRecordedTime)
-	if a.LastCtrCPULocalMaxima.Usage < other.LastCtrCPULocalMaxima.Usage { //&&
-		// a.LastCtrCPULocalMaxima.MeasureStart.IsZero() { //&&
-		//a.LastCPULocalMaximaRecordedTime.After(other.LastCPULocalMaximaRecordedTime) {
+	cpuMaximaRecordTimeDiff := time.Now().Sub(other.LastCPULocalMaximaRecordedTime)
+	if a.LastCtrCPULocalMaxima.Usage < other.LastCtrCPULocalMaxima.Usage &&
+		cpuMaximaRecordTimeDiff < other.TimeWindowForLocalMaxima { //&&
 		a.LastCtrCPULocalMaxima = other.LastCtrCPULocalMaxima
 	}
 
-	// // memDiffDuration := time.Now().Sub(a.LastMemLocalMaximaRecordedTime)
-	if a.LastCtrMemoryLocalMaxima.Usage < other.LastCtrMemoryLocalMaxima.Usage { //&&
-		// a.LastCtrMemoryLocalMaxima.MeasureStart.IsZero() { //&&
-		//a.LastMemLocalMaximaRecordedTime.After(other.LastMemLocalMaximaRecordedTime) {
+	memMaximaRecordTimeDiff := time.Now().Sub(other.LastMemLocalMaximaRecordedTime)
+	if a.LastCtrMemoryLocalMaxima.Usage < other.LastCtrMemoryLocalMaxima.Usage &&
+		memMaximaRecordTimeDiff < other.TimeWindowForLocalMaxima { //&&
 		a.LastCtrMemoryLocalMaxima = other.LastCtrMemoryLocalMaxima
 	}
 
@@ -235,20 +233,22 @@ func NewAggregateContainerState() *AggregateContainerState {
 	}
 
 	return &AggregateContainerState{
-		CreationTime:             time.Now(),
-		TimeWindowForLocalMaxima: config.ThresholdMonitorTimeWindow,
-		ThresholdScaleDown:       config.ThresholdScaleDown,
-		ThresholdScaleUp:         config.ThresholdScaleUp,
-		ScaleDownSafetyFactor:    config.ScaleDownSafetyFactor,
-		ScaleUpFactor:            config.ScaleUpFactor,
-		RestartBudget:            config.ThresholdNumCrashes,
-		CurrentCtrCPUUsage:       currentCtrCPUUsage,
-		CurrentCtrMemUsage:       currentCtrMemUsage,
-		LastCtrCPULocalMaxima:    lastCtrCPULocalMaxima,
-		LastCtrMemoryLocalMaxima: lastCtrMemLocalMaxima,
-		LastSeenRestartCount:     0,
-		TotalCPUSamplesCount:     0,
-		TotalMemorySamplesCount:  0,
+		CreationTime:                   time.Now(),
+		TimeWindowForLocalMaxima:       config.ThresholdMonitorTimeWindow,
+		ThresholdScaleDown:             config.ThresholdScaleDown,
+		ThresholdScaleUp:               config.ThresholdScaleUp,
+		ScaleDownSafetyFactor:          config.ScaleDownSafetyFactor,
+		ScaleUpFactor:                  config.ScaleUpFactor,
+		RestartBudget:                  config.ThresholdNumCrashes,
+		CurrentCtrCPUUsage:             currentCtrCPUUsage,
+		CurrentCtrMemUsage:             currentCtrMemUsage,
+		LastCtrCPULocalMaxima:          lastCtrCPULocalMaxima,
+		LastCtrMemoryLocalMaxima:       lastCtrMemLocalMaxima,
+		LastCPULocalMaximaRecordedTime: time.Now(),
+		LastMemLocalMaximaRecordedTime: time.Now(),
+		LastSeenRestartCount:           0,
+		TotalCPUSamplesCount:           0,
+		TotalMemorySamplesCount:        0,
 	}
 }
 
@@ -295,8 +295,7 @@ func (a *AggregateContainerState) addCPULocalMaxima(sample *ContainerUsageSample
 
 	// thresholdMonitorTimeWindow = 30 * time.Minute by default
 	diffDuration := time.Now().Sub(a.LastCPULocalMaximaRecordedTime)
-
-	if diffDuration > a.TimeWindowForLocalMaxima {
+	if diffDuration > a.TimeWindowForLocalMaxima && !a.LastCPULocalMaximaRecordedTime.IsZero() {
 		// reset CPU Local Maxima Request and Usage
 		a.LastCtrCPULocalMaxima.Usage = 0
 		a.LastCtrCPULocalMaxima.Request = 0
@@ -322,7 +321,7 @@ func (a *AggregateContainerState) addMemoryLocalMaxima(sample *ContainerUsageSam
 
 	// thresholdMonitorTimeWindow = 30 * time.Minute by default
 	diffDuration := time.Now().Sub(a.LastMemLocalMaximaRecordedTime)
-	if diffDuration > a.TimeWindowForLocalMaxima {
+	if diffDuration > a.TimeWindowForLocalMaxima && !a.LastMemLocalMaximaRecordedTime.IsZero() {
 		// reset Memory Local Maxima Request and Usage
 		a.LastCtrMemoryLocalMaxima.Usage = 0
 		a.LastCtrMemoryLocalMaxima.Request = 0
@@ -361,6 +360,7 @@ func (a *AggregateContainerState) UpdateFromPolicy(resourcePolicy *vpa_types.Con
 // grouping by the container name. The result is a map from the container name to the aggregation
 // from all input containers with the given name.
 func AggregateStateByContainerName(aggregateContainerStateMap aggregateContainerStatesMap) ContainerNameToAggregateStateMap {
+	// var maxMergeTimeMonitor time.Duration
 	containerNameToAggregateStateMap := make(ContainerNameToAggregateStateMap)
 	for aggregationKey, aggregation := range aggregateContainerStateMap {
 		containerName := aggregationKey.ContainerName()
@@ -369,6 +369,7 @@ func AggregateStateByContainerName(aggregateContainerStateMap aggregateContainer
 			aggregateContainerState = NewAggregateContainerState()
 			containerNameToAggregateStateMap[containerName] = aggregateContainerState
 		}
+
 		aggregateContainerState.MergeContainerState(aggregation)
 	}
 	return containerNameToAggregateStateMap
