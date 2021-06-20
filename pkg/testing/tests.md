@@ -41,20 +41,20 @@ This paragraph talks about individual test steps required for running each of th
 - Results Old VPA Recommender
     Please observe the results in between 14:05 to 14:18 in the below graphs obtained from Prometheus client.
 
-    [CPU Requests at config defined values](test_results/old_vpa/crashloop/crash_loop_cpu_requests.png)
+    ![CPU Requests at config defined values](test_results/old_vpa/crashloop/crash_loop_cpu_requests.png)
 
-    [Memory requests at config defined values](test_results/old_vpa/crashloop/crash_loop_memory.png)
+    ![Memory requests at config defined values](test_results/old_vpa/crashloop/crash_loop_memory.png)
 
-    [Restart Count due to CrashLoopBackOff](test_results/old_vpa/crashloop/crash_loop_restart_count.png)
+    ![Restart Count due to CrashLoopBackOff](test_results/old_vpa/crashloop/crash_loop_restart_count.png)
 
 - Results New VPA Recommender
     Please observe the results in between 2:30 to 2:40 in the below graphs obtained from Prometheus client.
 
-    [CPU Requests at config defined values](test_results/new_vpa/functional/CPU_Requests.png)
+    ![CPU Requests at config defined values](test_results/new_vpa/functional/CPU_Requests.png)
 
-    [Memory Requests at config defined values](test_results/new_vpa/functional/Memory_Requests.png)
+    ![Memory Requests at config defined values](test_results/new_vpa/functional/Memory_Requests.png)
 
-    [Restart Count due to CrashLoopBackoff](test_results/new_vpa/functional/restart_count.png)
+    ![Restart Count due to CrashLoopBackoff](test_results/new_vpa/functional/restart_count.png)
 
 - Analysis
     1. The CPU stays at the same config defined value once the pod has entered `CrashLoopBackoff` in the old vpa recommender. 
@@ -100,26 +100,26 @@ This paragraph talks about individual test steps required for running each of th
 - Results Old VPA Recommender
     Please observe the results in between 14:35 and 15:05 in the below graphs obtained from Prometheus client.
 
-    [CPU Requests at config defined values](test_results/old_vpa/scale_up/cpu_requests.png)
+    ![CPU Requests at config defined values](test_results/old_vpa/scale_up/cpu_requests.png)
 
-    [Memory Requests at config defined values](test_results/old_vpa/scale_up/memory_requests.png)
+    ![Memory Requests at config defined values](test_results/old_vpa/scale_up/memory_requests.png)
 
-    [Scale Up Lower Bound](test_results/old_vpa/scale_up/scale_up_lb.png)
+    ![Scale Up Lower Bound](test_results/old_vpa/scale_up/scale_up_lb.png)
 
-    [Scale Up CPU Target](test_results/old_vpa/scale_up/scale_up_cpu_target.png)
+    ![Scale Up CPU Target](test_results/old_vpa/scale_up/scale_up_cpu_target.png)
 
-    [Scale Up Memory Target](test_results/old_vpa/scale_up/scale_up_memory_target.png)
+    ![Scale Up Memory Target](test_results/old_vpa/scale_up/scale_up_memory_target.png)
 
-    [Scale Up Upper Bound](test_results/old_vpa/scale_up/scale_up_ub.png)
+    ![Scale Up Upper Bound](test_results/old_vpa/scale_up/scale_up_ub.png)
 
 - Results New VPA Recommender
     Please observe the results in between 2:35 and 3:00 in the below graphs obtained from Prometheus client.
 
-    [CPU Requests at config defined values](test_results/new_vpa/functional/CPU_Requests.png)
+    ![CPU Requests at config defined values](test_results/new_vpa/functional/CPU_Requests.png)
 
-    [Memory Requests at config defined values](test_results/new_vpa/functional/Memory_Requests.png)
+    ![Memory Requests at config defined values](test_results/new_vpa/functional/Memory_Requests.png)
 
-    [Restart Count due to CrashLoopBackoff](test_results/new_vpa/functional/restart_count.png)
+    ![Restart Count due to CrashLoopBackoff](test_results/new_vpa/functional/restart_count.png)
 
 - Analysis
     1. The old vpa recommender in this cases was enabled again with lower limits for the pod just to get it working.
@@ -154,11 +154,11 @@ This paragraph talks about individual test steps required for running each of th
 - Results New VPA Recommender
     Please observe the results in between 2:35 and 2:45 in the below graphs obtained from Prometheus client.
 
-    [CPU Requests at config defined values](test_results/new_vpa/functional/CPU_Requests.png)
+    ![CPU Requests at config defined values](test_results/new_vpa/functional/CPU_Requests.png)
 
-    [Memory Requests at config defined values](test_results/new_vpa/functional/Memory_Requests.png)
+    ![Memory Requests at config defined values](test_results/new_vpa/functional/Memory_Requests.png)
 
-    [Restart Count due to CrashLoopBackoff](test_results/new_vpa/functional/restart_count.png)
+    ![Restart Count due to CrashLoopBackoff](test_results/new_vpa/functional/restart_count.png)
 
 - Analysis
     1. The recommender once restarted has preserved the state of the current recommendations given.
@@ -182,26 +182,26 @@ This paragraph talks about individual test steps required for running each of th
 - Results Old VPA Recommender
     Please observe the results in between 14:35 and 15:05 in the below graphs obtained from Prometheus client.
 
-    [CPU Requests at config defined values](test_results/old_vpa/scale_down/cpu_requests.png)
+    ![CPU Requests at config defined values](test_results/old_vpa/scale_down/cpu_requests.png)
 
-    [Memory Requests at config defined values](test_results/old_vpa/scale_down/memory_requests.png)
+    ![Memory Requests at config defined values](test_results/old_vpa/scale_down/memory_requests.png)
 
-    [Scale Up Lower Bound](test_results/old_vpa/scale_down/scale_down_lb.png)
+    ![Scale Up Lower Bound](test_results/old_vpa/scale_down/scale_down_lb.png)
 
-    [Scale Up CPU Target](test_results/old_vpa/scale_down/scale_down_cpu_target.png)
+    ![Scale Up CPU Target](test_results/old_vpa/scale_down/scale_down_cpu_target.png)
 
-    [Scale Up Memory Target](test_results/old_vpa/scale_down/scale_down_memory_target.png)
+    ![Scale Up Memory Target](test_results/old_vpa/scale_down/scale_down_memory_target.png)
 
-    [Scale Up Upper Bound](test_results/old_vpa/scale_down/scale_down_ub.png)
+    ![Scale Up Upper Bound](test_results/old_vpa/scale_down/scale_down_ub.png)
 
 - Results New VPA Recommender
     Please observe the results in between 3:02 and 3:20 in the below graphs obtained from Prometheus client.
 
-    [CPU Requests at config defined values](test_results/new_vpa/functional/CPU_Requests.png)
+    ![CPU Requests at config defined values](test_results/new_vpa/functional/CPU_Requests.png)
 
-    [Memory Requests at config defined values](test_results/new_vpa/functional/Memory_Requests.png)
+    ![Memory Requests at config defined values](test_results/new_vpa/functional/Memory_Requests.png)
 
-    [Restart Count due to CrashLoopBackoff](test_results/new_vpa/functional/restart_count.png)
+    ![Restart Count due to CrashLoopBackoff](test_results/new_vpa/functional/restart_count.png)
 
 - Analysis
     1. Previously a scale up from 512MB to 1GB was done in both experiments before initiating a scale down from 1GB to 256MB.
@@ -235,11 +235,11 @@ This paragraph talks about individual test steps required for running each of th
 - Results of New VPA Recommender
     Please observe the results in between 3:02 and 3:10 in the below graphs obtained from Prometheus client.
 
-    [CPU Requests at config defined values](test_results/new_vpa/functional/CPU_Requests.png)
+    ![CPU Requests at config defined values](test_results/new_vpa/functional/CPU_Requests.png)
 
-    [Memory Requests at config defined values](test_results/new_vpa/functional/Memory_Requests.png)
+    ![Memory Requests at config defined values](test_results/new_vpa/functional/Memory_Requests.png)
 
-    [Restart Count due to CrashLoopBackoff](test_results/new_vpa/functional/restart_count.png)
+    ![Restart Count due to CrashLoopBackoff](test_results/new_vpa/functional/restart_count.png)
 
 - Analysis
     1. The recommender once restarted has preserved the state of the current recommendations given.
@@ -260,11 +260,11 @@ This paragraph talks about individual test steps required for running each of th
 - Results of New VPA Recommender
     Please observe the results in between 2:38 and 2:48 in the below graphs obtained from Prometheus client.
 
-    [CPU Requests at config defined values](test_results/new_vpa/functional/CPU_Requests.png)
+    ![CPU Requests at config defined values](test_results/new_vpa/functional/CPU_Requests.png)
 
-    [Memory Requests at config defined values](test_results/new_vpa/functional/Memory_Requests.png)
+    ![Memory Requests at config defined values](test_results/new_vpa/functional/Memory_Requests.png)
 
-    [Restart Count due to CrashLoopBackoff](test_results/new_vpa/functional/restart_count.png)
+    ![Restart Count due to CrashLoopBackoff](test_results/new_vpa/functional/restart_count.png)
 
 - Analysis
 
@@ -282,11 +282,11 @@ This paragraph talks about individual test steps required for running each of th
 - Results of New VPA Recommender
     Please observe the results in between 2:42 and 2:48 in the below graphs obtained from Prometheus client.
 
-    [CPU Requests at config defined values](test_results/new_vpa/functional/CPU_Requests.png)
+    ![CPU Requests at config defined values](test_results/new_vpa/functional/CPU_Requests.png)
 
-    [Memory Requests at config defined values](test_results/new_vpa/functional/Memory_Requests.png)
+    ![Memory Requests at config defined values](test_results/new_vpa/functional/Memory_Requests.png)
 
-    [Restart Count due to CrashLoopBackoff](test_results/new_vpa/functional/restart_count.png)
+    ![Restart Count due to CrashLoopBackoff](test_results/new_vpa/functional/restart_count.png)
 - Analysis
 
 ### Non-Functional Tests
@@ -304,19 +304,19 @@ This paragraph talks about individual test steps required for running each of th
 - Results of New VPA Recommender
     Please observe the results for the entire experiment of scale up initially from defined requests and usage of 512MB to 1GB, later scale down the usage to 256MB.
 
-    [CPU Requests at config defined values](test_results/new_vpa/no_limits/cpu_requests.png)
+    ![CPU Requests at config defined values](test_results/new_vpa/no_limits/cpu_requests.png)
 
-    [Memory Requests at config defined values](test_results/new_vpa/no_limits/memory_requests.png)
+    ![Memory Requests at config defined values](test_results/new_vpa/no_limits/memory_requests.png)
 
-    [Restart Count due to CrashLoopBackoff](test_results/new_vpa/no_limts/restart_count.png)
+    ![Restart Count due to CrashLoopBackoff](test_results/new_vpa/no_limts/restart_count.png)
 
-    [VPA Lower Bound](test_results/new_vpa/no_limts/vpa_lb.png)
+    ![VPA Lower Bound](test_results/new_vpa/no_limts/vpa_lb.png)
 
-    [VPA Target CPU](test_results/new_vpa/no_limits/vpa_cpu_target.png)
+    ![VPA Target CPU](test_results/new_vpa/no_limits/vpa_cpu_target.png)
 
-    [VPA Target Memory](test_results/new_vpa/no_limits/vpa_memory_target.png)
+    ![VPA Target Memory](test_results/new_vpa/no_limits/vpa_memory_target.png)
 
-    [Pod Information](test_results/new_vpa/no_limits/pod_info.png)
+    ![Pod Information](test_results/new_vpa/no_limits/pod_info.png)
 
 - Analysis
     1. We do not see a `CrashLoopBackOff` state initially as the limits for the pod was not defined and the pod sustains the usage.
