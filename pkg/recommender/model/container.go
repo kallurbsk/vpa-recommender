@@ -177,13 +177,15 @@ func (container *ContainerState) RecordOOM(timestamp time.Time, requestedMemory 
 }
 
 // RecordRestartCount records the latest restart count observed for a particular container
-func (container *ContainerState) RecordRestartCount(restartCount int, restartBudget int) {
+func (container *ContainerState) RecordRestartCount(restartCount int, restartBudget int) bool {
 	container.aggregator.SetContainerRestartCounts(restartCount, restartBudget)
+	return true
 }
 
 // RecordCurrentContainerState records the current container state reason if waiting or terminated
-func (container *ContainerState) RecordCurrentContainerState(curState ContainerCurrentState) {
+func (container *ContainerState) RecordCurrentContainerState(curState ContainerCurrentState) bool {
 	container.aggregator.SetCurrentContainerState(curState)
+	return true
 }
 
 // AddSample adds a resource usage sample to the aggregate containrer state.

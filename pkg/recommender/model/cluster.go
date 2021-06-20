@@ -369,12 +369,9 @@ func (cluster *ClusterState) findOrCreateAggregateContainerState(containerID Con
 	return aggregateContainerState
 }
 
-// GarbageCollectAggregateCollectionStates removes obsolete AggregateCollectionStates from the ClusterState.
-// AggregateCollectionState is obsolete in following situations:
-// 1) It has no samples and there are no more active pods that can contribute,
-// 2) The last sample is too old to give meaningful recommendation (>8 days),
-// 3) There are no samples and the aggregate state was created >8 days ago.
-func (cluster *ClusterState) GarbageCollectAggregateCollectionStates(now time.Time) {
+// GarbageCollectAggregateCollectionStates removes obsolete
+// AggregateCollectionStates from the ClusterState which are more than an hour old
+func (cluster *ClusterState) GarbageCollectAggregateCollectionStates() {
 	klog.V(1).Info("Garbage collection of AggregateCollectionStates triggered")
 	keysToDelete := make([]AggregateStateKey, 0)
 	activeKeys := cluster.getActiveAggregateStateKeys()

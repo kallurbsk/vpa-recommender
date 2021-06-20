@@ -51,32 +51,10 @@ type minResourcesEstimator struct {
 	baseEstimator ResourceEstimator
 }
 
-// Base scale up threshold estimator struct to ensure scaling happens below the scale up threshold limit
-type scaleUpThresholdEstimator struct {
-	thresoldScaleUp float64
-	baseEstimator   ResourceEstimator
-}
-
-// Base scale down threshold estimator struct to ensure scaling happens above the scale down threshold limit
-type scaleDownThresholdEstimator struct {
-	thresholdScaleDown float64
-	baseEstimator      ResourceEstimator
-}
-
 // Scale the resources between 1x - 2x the current usage within the safety margin for resource usage
 type scaledResourceEstimator struct {
 	cpuScaleValue float64
 	memScaleValue float64
-}
-
-// NewScaleUpThresholdEstiamtor returns a new scaleUpThresholdEstimator to set upper boundary for scaling up
-func NewScaleUpThresholdEstimator(thresholdScaleUp float64, baseEstimator ResourceEstimator) ResourceEstimator {
-	return &scaleUpThresholdEstimator{thresholdScaleUp, baseEstimator}
-}
-
-// NewScaleDownThresholdEstiamtor returns a new scaleDownThresholdEstimator to set lower boundary for scaling down
-func NewScaleDownThresholdEstimator(thresholdScaleDown float64, baseEstimator ResourceEstimator) ResourceEstimator {
-	return &scaleDownThresholdEstimator{thresholdScaleDown, baseEstimator}
 }
 
 // NewScaleValueEstimator returns a new scaledResourceEstimator with scale value parameters for CPU and memory
@@ -247,24 +225,4 @@ func (e *scaledResourceEstimator) GetResourceEstimation(s *model.AggregateContai
 		}
 	}
 	return scaledResources, true
-}
-
-func (e *scaleUpThresholdEstimator) GetResourceEstimation(s *model.AggregateContainerState) (model.Resources, bool) {
-	originalResources, _ := e.baseEstimator.GetResourceEstimation(s)
-	thresholdScaleUpResources := make(model.Resources)
-	for resource, resourceAmount := range originalResources {
-		thresholdScaleUpResources[resource] = model.ScaleResource(resourceAmount, e.thresoldScaleUp)
-	}
-
-	return thresholdScaleUpResources, true
-}
-
-func (e *scaleDownThresholdEstimator) GetResourceEstimation(s *model.AggregateContainerState) (model.Resources, bool) {
-	originalResources, _ := e.baseEstimator.GetResourceEstimation(s)
-	thresholdScaleDownResources := make(model.Resources)
-	for resource, resourceAmount := range originalResources {
-		thresholdScaleDownResources[resource] = model.ScaleResource(resourceAmount, e.thresholdScaleDown)
-	}
-
-	return thresholdScaleDownResources, true
 }

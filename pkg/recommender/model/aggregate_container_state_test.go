@@ -22,8 +22,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	apiv1 "k8s.io/api/core/v1"
+	labels "k8s.io/apimachinery/pkg/labels"
 
-	// metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	vpa_types "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
 )
 
@@ -37,7 +37,6 @@ var (
 	}
 	timeLayout       = "2006-01-02 15:04:05"
 	testTimestamp, _ = time.Parse(timeLayout, "2017-04-18 17:35:05")
-	testLabels       = map[string]string{"label-1": "value-1"}
 )
 
 func addTestCPUSample(cluster *ClusterState, container ContainerID, cpuCores float64) error {
@@ -112,6 +111,42 @@ func TestAggregateContainerStateLocalMaximaValues(t *testing.T) {
 	assert.Equal(t, 0, int(cs.LastCtrMemoryLocalMaxima.Request))
 	assert.Equal(t, 0, int(cs.LastCtrMemoryLocalMaxima.Usage))
 	assert.Equal(t, "memory", string(cs.LastCtrMemoryLocalMaxima.Resource))
+
+}
+
+func TestAggregateStateByContainerName(t *testing.T) {
+	cluster := NewClusterState()
+	cluster.AddOrUpdatePod(testPodID1, testLabels, apiv1.PodRunning)
+	otherLabels := labels.Set{"label-2": "value-2"}
+	cluster.AddOrUpdatePod(testPodID2, otherLabels, apiv1.PodRunning)
+
+	// Create 4 containers: 2 with the same name and 2 with different names.
+	containers := []ContainerID{
+		{testPodID1, "app-A"},
+		{testPodID1, "app-B"},
+		{testPodID2, "app-A"},
+		{testPodID2, "app-C"},
+	}
+	for _, c := range containers {
+		assert.NoError(t, cluster.AddOrUpdateContainer(c, testRequest, restartCount, ctrReady, ctrCurState))
+	}
+
+	// Add CPU usage samples to all containers.
+	assert.NoError(t, addTestCPUSample(cluster, containers[0], 1.0)) // app-A
+	assert.NoError(t, addTestCPUSample(cluster, containers[1], 5.0)) // app-B
+	assert.NoError(t, addTestCPUSample(cluster, containers[2], 3.0)) // app-A
+	assert.NoError(t, addTestCPUSample(cluster, containers[3], 5.0)) // app-C
+	// Add Memory usage samples to all containers.
+	assert.NoError(t, addTestMemorySample(cluster, containers[0], 2e9))  // app-A
+	assert.NoError(t, addTestMemorySample(cluster, containers[1], 10e9)) // app-B
+	assert.NoError(t, addTestMemorySample(cluster, containers[2], 4e9))  // app-A
+	assert.NoError(t, addTestMemorySample(cluster, containers[3], 10e9)) // app-C
+
+	// Build the AggregateContainerStateMap.
+	aggregateResources := AggregateStateByContainerName(cluster.aggregateStateMap)
+	assert.Contains(t, aggregateResources, "app-A")
+	assert.Contains(t, aggregateResources, "app-B")
+	assert.Contains(t, aggregateResources, "app-C")
 
 }
 

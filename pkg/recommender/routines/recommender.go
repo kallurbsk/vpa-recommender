@@ -238,7 +238,7 @@ func (r *recommender) MaintainCheckpoints(ctx context.Context, minCheckpointsPer
 func (r *recommender) GarbageCollect() {
 	gcTime := time.Now()
 	if gcTime.Sub(r.lastAggregateContainerStateGC) > AggregateContainerStateGCInterval {
-		r.clusterState.GarbageCollectAggregateCollectionStates(gcTime)
+		r.clusterState.GarbageCollectAggregateCollectionStates()
 		r.lastAggregateContainerStateGC = gcTime
 	}
 }
