@@ -10,6 +10,18 @@
 ## Unit Testing
 - Unit test validating the new estimator algorithm which gives the CPU and memory scale
 - Test evaluating setting CurrentCPUUsage, CurrentMemUsage, LocalMaximaCPUUsage, LocalMaximaMemUsage values in the Aggregate Container State object which is used to take care of state keeping the containers
+- The code in [model](../recommender/model) and [logic](../recommender/logic) has been written to accommodate the new VPA recommender.
+- Some of the UT are used from the existing VPA recommender code as the test case very well applies here in the new VPA recommender too.
+- UT coverage for the tests are as follows:
+```
+PASS
+coverage: 82.0% of statements
+ok  	github.com/gardener/vpa-recommender/pkg/recommender/model	1.089s
+
+PASS
+coverage: 80.7% of statements
+ok  	github.com/gardener/vpa-recommender/pkg/recommender/logic	0.915s
+```
 
 ## Functional Testing
 1. Scale up recommendation to get pod state from `CrashLoopBackOff` (CLBO) to `Running` state. (compare)
@@ -38,7 +50,7 @@ This paragraph talks about individual test steps required for running each of th
     2. Considering that both CPU and memory are insufficient and the pod is already in CrashLoopBackOff state, the restart budget of the container should be calculated. If less than 0, then doubling of both CPU and memory based on current usage should be recommended as the resource to be applied for the application. (Restart Budget = Restart Budget – [CurrentRestartCount – LastSeenRestartCount])
     3. The pod should arrive back at Running state.
 
-- Results Old VPA Recommender
+- Results Existing VPA Recommender
     Please observe the results in between 14:05 to 14:18 in the below graphs obtained from Prometheus client.
 
     ![CPU Requests at config defined values](test_results/old_vpa/crashloop/crash_loop_cpu_requests.png)
@@ -57,14 +69,14 @@ This paragraph talks about individual test steps required for running each of th
     ![Restart Count due to CrashLoopBackoff](test_results/new_vpa/functional/restart_count.png)
 
 - Analysis
-    1. The CPU stays at the same config defined value once the pod has entered `CrashLoopBackoff` in the old vpa recommender. 
+    1. The CPU stays at the same config defined value once the pod has entered `CrashLoopBackoff` in the Existing VPA recommender. 
        In the new vpa recommender, we can see a gradual increase in CPU requests as the VPA starts recommending double the existing requests
        to get the pod out of crashloop state.
-    2. The memory stays at the same config defined value once the pod has entered `CrashLoopBackoff` in the old vpa recommender. 
+    2. The memory stays at the same config defined value once the pod has entered `CrashLoopBackoff` in the Existing VPA recommender. 
        In the new vpa recommender, we can see a gradual increase in memory requests as the VPA starts recommending double the existing requests
        to get the pod out of crashloop state.
-    3. The restart count constantly increases in the old VPA recommender in comparison to the new vpa recommender.
-    4. The old VPA recommender gives up recommendation and enters into below mentioned state.
+    3. The restart count constantly increases in the Existing VPA recommender in comparison to the new vpa recommender.
+    4. The Existing VPA recommender gives up recommendation and enters into below mentioned state.
         ```
         Update Policy:
         Resource Policy:
@@ -97,7 +109,7 @@ This paragraph talks about individual test steps required for running each of th
     2.	The pod restarts and applies the new resource requests calculated by the recommender accordingly.
     3.	The pod should stabilize and not run into CrashLoop
 
-- Results Old VPA Recommender
+- Results Existing VPA Recommender
     Please observe the results in between 14:35 and 15:05 in the below graphs obtained from Prometheus client.
 
     ![CPU Requests at config defined values](test_results/old_vpa/scale_up/cpu_requests.png)
@@ -122,13 +134,13 @@ This paragraph talks about individual test steps required for running each of th
     ![Restart Count due to CrashLoopBackoff](test_results/new_vpa/functional/restart_count.png)
 
 - Analysis
-    1. The old vpa recommender in this cases was enabled again with lower limits for the pod just to get it working.
+    1. The Existing VPA recommender in this cases was enabled again with lower limits for the pod just to get it working.
        There was no change in configuration for the stress tool pod defined in the new vpa recommender case.
-    2. The old vpa recommender observes a constant increase in the CPU recommendation which goes upto 70 millicores.
+    2. The Existing VPA recommender observes a constant increase in the CPU recommendation which goes upto 70 millicores.
        This value is close the 50 millicore request defined initially and should there be a spike the pod enters into crash loop.
        The new VPA recommender on the other hand as a constant icnrease in the memory recommendation which goes upto 110 millicore
        which is double the value of 50 millicore request defined initially. The pod can be guarded for CPU spikes till 110 millicores
-    3. The old vpa recommender observes a constant increase in the memory recommendation as we observe from the graph.
+    3. The Existing VPA recommender observes a constant increase in the memory recommendation as we observe from the graph.
        It reaches at around 700MB and flattens while the pod usage is at around 512MB.
        The new VPA recommender doubles the memory recommendation based on the current usage and does not take history into account.
        It reaches a recommendation of around 1.2GB which is rouhgly double the value of 512MB. This also ensures a good limit
@@ -179,7 +191,7 @@ This paragraph talks about individual test steps required for running each of th
     1.	If the resource usage goes below RRLTL, then the scale value for that resource should be reduced to ScaleDownSafetyLimit.
     2.  The pod restarts and applies the new resource requests calculated by the recommender accordingly.
 
-- Results Old VPA Recommender
+- Results Existing VPA Recommender
     Please observe the results in between 14:35 and 15:05 in the below graphs obtained from Prometheus client.
 
     ![CPU Requests at config defined values](test_results/old_vpa/scale_down/cpu_requests.png)
@@ -208,7 +220,7 @@ This paragraph talks about individual test steps required for running each of th
        Scale down time window interval in the new VPA recommender was set at 10 minutes. This ensures scale down does not happen
        immediately which might result in flapping should there be a usage spike immediately. The parameter is configurable by 
        the user and set to 30 minutes.
-    2. The old vpa recommender stays at the recommendation of 1GB resource usage even after downgrading to 256MB. 
+    2. The Existing VPA recommender stays at the recommendation of 1GB resource usage even after downgrading to 256MB. 
        I waited for ~30 minutes before stopping the recommender as the resource requests obtained from recommendation 
        for memory and CPU remained at the recommended values obtained previously for 1GB.
        The new VPA recommender on the other hand is slightly more predictable w.r.t scale down. The new VPA recommender scales down
@@ -331,7 +343,7 @@ This paragraph talks about individual test steps required for running each of th
         5. The `Pod Information` graph above shows the pod restart at 19:17 and 19:22 clearly. Once both CPU and memory are scaled down, we can see the pod remains in that state with new usage values.
 
 ### Automation Plans
-1. The old VPA recommender already has a set of functional test suites for integration and e2e testing.
+1. The Existing VPA recommender already has a set of functional test suites for integration and e2e testing.
 2. The plan for the new VPA recommender is to check if we can reuse the same utilities of those tests as the overall behaviour remains same.
 3. The above tests are done manually as of now and the automation can be completed in 2 phases.
     1. P0 test cases:
