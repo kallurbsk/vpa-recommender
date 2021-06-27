@@ -22,10 +22,6 @@ import (
 	"fmt"
 	"time"
 
-	controllerfetcher "github.com/gardener/vpa-recommender/pkg/recommender/input/controller_fetcher"
-	"github.com/gardener/vpa-recommender/pkg/recommender/input/history"
-	"github.com/gardener/vpa-recommender/pkg/recommender/input/metrics"
-	"github.com/gardener/vpa-recommender/pkg/recommender/input/oom"
 	"github.com/gardener/vpa-recommender/pkg/recommender/input/spec"
 	"github.com/gardener/vpa-recommender/pkg/recommender/model"
 	apiv1 "k8s.io/api/core/v1"
@@ -38,6 +34,10 @@ import (
 	vpa_clientset "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/client/clientset/versioned"
 	vpa_api "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/client/clientset/versioned/typed/autoscaling.k8s.io/v1"
 	vpa_lister "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/client/listers/autoscaling.k8s.io/v1"
+	controllerfetcher "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input/controller_fetcher"
+	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input/history"
+	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input/metrics"
+	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input/oom"
 	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/target"
 	metrics_recommender "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/metrics/recommender"
 	vpa_api_util "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/vpa"
@@ -236,18 +236,23 @@ func (feeder *clusterStateFeeder) InitFromHistoryProvider(historyProvider histor
 	}
 	for podID, podHistory := range clusterHistory {
 		klog.V(4).Infof("Adding pod %v with labels %v", podID, podHistory.LastLabels)
-		feeder.clusterState.AddOrUpdatePod(podID, podHistory.LastLabels, apiv1.PodUnknown)
+		feeder.clusterState.AddOrUpdatePod(model.PodID(podID), podHistory.LastLabels, apiv1.PodUnknown)
 		for containerName, sampleList := range podHistory.Samples {
 			containerID := model.ContainerID{
-				PodID:         podID,
+				PodID:         model.PodID(podID),
 				ContainerName: containerName,
 			}
 			klog.V(4).Infof("Adding %d samples for container %v", len(sampleList), containerID)
 			for _, sample := range sampleList {
 				if err := feeder.clusterState.AddSample(
 					&model.ContainerUsageSampleWithKey{
-						ContainerUsageSample: sample,
-						Container:            containerID,
+						ContainerUsageSample: model.ContainerUsageSample{
+							Request:      model.ResourceAmount(sample.Request),
+							Usage:        model.ResourceAmount(sample.Usage),
+							MeasureStart: sample.MeasureStart,
+							Resource:     model.ResourceName(sample.Resource),
+						},
+						Container: containerID,
 					}); err != nil {
 					klog.Warningf("Error adding metric sample for container %v: %v", containerID, err)
 				}
@@ -264,29 +269,12 @@ func (feeder *clusterStateFeeder) setVpaCheckpoint(checkpoint *vpa_types.Vertica
 	}
 
 	cs := model.NewAggregateContainerState()
-	// err := cs.LoadFromCheckpoint(&checkpoint.Status)
-	// if err != nil {
-	// 	return fmt.Errorf("cannot load checkpoint for VPA %+v. Reason: %v", vpa.ID, err)
-	// }
-
 	// Loading VPA recommender params from annotations.
 	annotations := checkpoint.ObjectMeta.Annotations["vpaData"]
 	var vpaData map[string]interface{}
 	if err := json.Unmarshal([]byte(annotations), &vpaData); err != nil {
 		return fmt.Errorf("cannot load checkpoint details of VPA %v. Reason: %v", vpa.ID, err)
 	}
-
-	// localMaximaCPU := vpaData["LocalMaximaCPU"].(map[string]interface{})
-	// cs.LastCtrCPULocalMaxima.MeasureStart, _ = time.Parse("0001-01-01T00:00:00Z", localMaximaCPU["MeasureStart"].(string))
-	// cs.LastCtrCPULocalMaxima.Request = model.ResourceAmount(localMaximaCPU["Request"].(float64))
-	// cs.LastCtrCPULocalMaxima.Usage = model.ResourceAmount(localMaximaCPU["Usage"].(float64))
-	// cs.LastCtrCPULocalMaxima.Resource = model.ResourceName(localMaximaCPU["Resource"].(string))
-
-	// localMaximaMemory := vpaData["LocalMaximaMemory"].(map[string]interface{})
-	// cs.LastCtrMemoryLocalMaxima.MeasureStart, _ = time.Parse("0001-01-01T00:00:00Z", localMaximaMemory["MeasureStart"].(string))
-	// cs.LastCtrMemoryLocalMaxima.Request = model.ResourceAmount(localMaximaMemory["Request"].(float64))
-	// cs.LastCtrMemoryLocalMaxima.Usage = model.ResourceAmount(localMaximaMemory["Usage"].(float64))
-	// cs.LastCtrMemoryLocalMaxima.Resource = model.ResourceName(localMaximaMemory["Resource"].(string))
 
 	cs.LastCPULocalMaximaRecordedTime, _ = time.Parse("0001-01-01T00:00:00Z", vpaData["LastCPULocalMaximaRecordedTime"].(string))
 	cs.LastMemLocalMaximaRecordedTime, _ = time.Parse("0001-01-01T00:00:00Z", vpaData["LastMemLocalMaximaRecordedTime"].(string))
@@ -394,6 +382,7 @@ func (feeder *clusterStateFeeder) LoadVPAs() {
 		if feeder.clusterState.AddOrUpdateVpa(vpaCRD, selector) == nil {
 			// Successfully added VPA to the model.
 			vpaKeys[vpaID] = true
+			klog.Infof("BSK cluster feeder VPA ID = %+v", vpaID)
 			for _, condition := range conditions {
 				if condition.delete {
 					delete(feeder.clusterState.Vpas[vpaID].Conditions, condition.conditionType)
@@ -454,26 +443,15 @@ func (feeder *clusterStateFeeder) LoadRealTimeMetrics() {
 		klog.Errorf("Cannot get ContainerMetricsSnapshot from MetricsClient. Reason: %+v", err)
 	}
 
-	podSpecs, err := feeder.specClient.GetPodSpecs()
-	if err != nil {
-		klog.Errorf("Cannot get SimplePodSpecs. Reason: %+v", err)
-	}
-	pods := make(map[model.PodID]*spec.BasicPodSpec)
-	for _, spec := range podSpecs {
-		pods[spec.ID] = spec
-	}
-	for key := range feeder.clusterState.Pods {
-		if _, exists := pods[key]; !exists {
-			klog.V(3).Infof("Deleting Pod %v", key)
-			feeder.clusterState.DeletePod(key)
-		}
-	}
-
 	sampleCount := 0
 	droppedSampleCount := 0
 	for _, containerMetrics := range containersMetrics {
 		for _, sample := range newContainerUsageSamplesWithKey(containerMetrics) {
-			sample.ContainerUsageSample.Request = feeder.containerRequests[containerMetrics.ID][sample.Resource]
+			containerID := model.ContainerID{
+				ContainerName: containerMetrics.ID.ContainerName,
+				PodID:         model.PodID(containerMetrics.ID.PodID),
+			}
+			sample.ContainerUsageSample.Request = feeder.containerRequests[containerID][sample.Resource]
 			if err := feeder.clusterState.AddSample(sample); err != nil {
 				// Not all pod states are tracked in memory saver mode
 				if _, isKeyError := err.(model.KeyError); isKeyError && feeder.memorySaveMode {
@@ -492,7 +470,11 @@ Loop:
 		select {
 		case oomInfo := <-feeder.oomChan:
 			klog.V(3).Infof("OOM detected %+v", oomInfo)
-			if err = feeder.clusterState.RecordOOM(oomInfo.ContainerID, oomInfo.Timestamp, oomInfo.Memory); err != nil {
+			oomContainerID := model.ContainerID{
+				ContainerName: oomInfo.ContainerID.ContainerName,
+				PodID:         model.PodID(oomInfo.ContainerID.PodID),
+			}
+			if err = feeder.clusterState.RecordOOM(oomContainerID, oomInfo.Timestamp, model.ResourceAmount(oomInfo.Memory)); err != nil {
 				klog.Warningf("Failed to record OOM %+v. Reason: %+v", oomInfo, err)
 			}
 		default:
@@ -517,11 +499,14 @@ func newContainerUsageSamplesWithKey(metrics *metrics.ContainerMetricsSnapshot) 
 
 	for metricName, resourceAmount := range metrics.Usage {
 		sample := &model.ContainerUsageSampleWithKey{
-			Container: metrics.ID,
+			Container: model.ContainerID{
+				ContainerName: metrics.ID.ContainerName,
+				PodID:         model.PodID(metrics.ID.PodID),
+			},
 			ContainerUsageSample: model.ContainerUsageSample{
 				MeasureStart: metrics.SnapshotTime,
-				Resource:     metricName,
-				Usage:        resourceAmount,
+				Resource:     model.ResourceName(metricName),
+				Usage:        model.ResourceAmount(resourceAmount),
 			},
 		}
 		samples = append(samples, sample)
