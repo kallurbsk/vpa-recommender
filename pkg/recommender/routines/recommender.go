@@ -29,6 +29,7 @@ import (
 	"github.com/gardener/vpa-recommender/pkg/recommender/checkpoint"
 	"github.com/gardener/vpa-recommender/pkg/recommender/input"
 	"github.com/gardener/vpa-recommender/pkg/recommender/logic"
+
 	"github.com/gardener/vpa-recommender/pkg/recommender/model"
 	metrics_recommender "github.com/gardener/vpa-recommender/pkg/utils/metrics/recommender"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -36,6 +37,7 @@ import (
 	vpa_types "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
 	vpa_clientset "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/client/clientset/versioned"
 	vpa_api "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/client/clientset/versioned/typed/autoscaling.k8s.io/v1"
+
 	vpa_utils "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/vpa"
 	"k8s.io/client-go/rest"
 	"k8s.io/klog"

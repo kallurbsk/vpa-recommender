@@ -23,10 +23,10 @@ import (
 
 	"github.com/gardener/vpa-recommender/pkg/recommender/model"
 
-	"github.com/gardener/vpa-recommender/pkg/recommender/input/history"
 	"github.com/gardener/vpa-recommender/pkg/recommender/routines"
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/autoscaler/vertical-pod-autoscaler/common"
+	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input/history"
 	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/metrics"
 	metrics_quality "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/metrics/quality"
 	metrics_recommender "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/metrics/recommender"

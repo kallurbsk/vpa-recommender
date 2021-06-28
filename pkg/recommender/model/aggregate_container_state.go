@@ -41,6 +41,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	vpa_types "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
+	"k8s.io/klog"
 )
 
 // ContainerNameToAggregateStateMap maps a container name to AggregateContainerState
@@ -295,6 +296,7 @@ func (a *AggregateContainerState) addCPULocalMaxima(sample *ContainerUsageSample
 
 	// thresholdMonitorTimeWindow = 30 * time.Minute by default
 	diffDuration := time.Now().Sub(a.LastCPULocalMaximaRecordedTime)
+	klog.Infof("CPU diff duration = %+v", diffDuration)
 	if diffDuration > a.TimeWindowForLocalMaxima && !a.LastCPULocalMaximaRecordedTime.IsZero() {
 		// reset CPU Local Maxima Request and Usage
 		a.LastCtrCPULocalMaxima.Usage = 0
@@ -321,6 +323,7 @@ func (a *AggregateContainerState) addMemoryLocalMaxima(sample *ContainerUsageSam
 
 	// thresholdMonitorTimeWindow = 30 * time.Minute by default
 	diffDuration := time.Now().Sub(a.LastMemLocalMaximaRecordedTime)
+	klog.Infof("Memory diff duration = %+v", diffDuration)
 	if diffDuration > a.TimeWindowForLocalMaxima && !a.LastMemLocalMaximaRecordedTime.IsZero() {
 		// reset Memory Local Maxima Request and Usage
 		a.LastCtrMemoryLocalMaxima.Usage = 0

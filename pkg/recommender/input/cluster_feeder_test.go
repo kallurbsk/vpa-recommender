@@ -23,13 +23,15 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 
-	controllerfetcher "github.com/gardener/vpa-recommender/pkg/recommender/input/controller_fetcher"
+	// controllerfetcher "github.com/gardener/vpa-recommender/pkg/recommender/input/controller_fetcher"
+	// controllerfetcher "github.com/gardener/vpa-recommender/pkg/recommender/input/controller_fetcher"
 	"github.com/gardener/vpa-recommender/pkg/recommender/input/spec"
 	"github.com/gardener/vpa-recommender/pkg/recommender/model"
 	autoscalingv1 "k8s.io/api/autoscaling/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	vpa_types "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
+	controllerfetcher "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/input/controller_fetcher"
 	target_mock "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/target/mock"
 	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/test"
 )
